@@ -47,7 +47,6 @@ async def start(update: Update, context: CallbackContext):
     # Send the welcome message with the button
     welcome_message = (
         f"Hey there! My name is Olive - I'm here to help you manage your groups! "
-        f"Use /help to find out more about how to use me to my full potential."
     )
     
     await context.bot.send_message(chat_id=update.effective_chat.id, text=welcome_message, reply_markup=reply_markup)
