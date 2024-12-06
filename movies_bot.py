@@ -119,7 +119,7 @@ async def main():
     dispatcher.add_error_handler(error_handler)
 
     # Set the webhook URL
-    webhook_url = f"https://telegram-bot-th04.onrender.com/{TOKEN}"
+    webhook_url = f"https://telegram-bot-q97w.onrender.com/{TOKEN}"
     await application.bot.set_webhook(webhook_url)
 
 if __name__ == "__main__":
