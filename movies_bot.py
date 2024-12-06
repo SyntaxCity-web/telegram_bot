@@ -97,6 +97,27 @@ class MovieBot:
             reply_markup=reply_markup
         )
 
+    async def welcome_new_member(self, update: Update, context: CallbackContext) -> None:
+        """Send a welcome message when a new member joins the search group."""
+        # Check if the event is for the specific search group
+        if update.effective_chat.id == int(self.SEARCH_GROUP_ID):
+            new_members = update.message.new_chat_members
+            for member in new_members:
+                welcome_message = (
+                    f"Welcome, {member.first_name}! 👋\n\n"
+                    "Welcome to the Movie Search Group! 🍿\n"
+                    "Here's how I can help you:\n"
+                    "• Simply type the name of a movie you're looking for\n"
+                    "• I'll search our movie collection and send you matching files\n"
+                    "• No commands needed - just type the movie title!\n\n"
+                    "Happy movie hunting! 🎬"
+                )
+                
+                await context.bot.send_message(
+                    chat_id=self.SEARCH_GROUP_ID, 
+                    text=welcome_message
+                )
+
     async def add_movie(self, update: Update, context: CallbackContext) -> None:
         """Add movie to the database with enhanced error handling."""
         if update.effective_chat.id != int(self.STORAGE_GROUP_ID):
@@ -193,6 +214,7 @@ class MovieBot:
             CommandHandler("start", self.start),
             MessageHandler(filters.Document.ALL, self.add_movie),
             MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_text_message),
+            MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, self.welcome_new_member),
         ]
         
         for handler in handlers:
