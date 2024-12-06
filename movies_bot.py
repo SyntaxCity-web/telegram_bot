@@ -2,6 +2,7 @@ import logging
 import re
 import asyncio
 import nest_asyncio
+import schedule
 from typing import List, Dict, Any
 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
@@ -26,7 +27,7 @@ load_dotenv()
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', 
     level=logging.INFO,
-    filename='bot_logs.log',
+    filename='movie_bot_logs.log',
     filemode='a'
 )
 logger = logging.getLogger(__name__)
@@ -36,8 +37,8 @@ class MovieBot:
         """Initialize bot configuration and database connection."""
         self.TOKEN = self._get_env_variable('TOKEN')
         self.DB_URL = self._get_env_variable('DB_URL')
-        self.SEARCH_GROUP_ID = self._get_env_variable('SEARCH_GROUP_ID')
-        self.STORAGE_GROUP_ID = self._get_env_variable('STORAGE_GROUP_ID')
+        self.SEARCH_GROUP_ID = int(self._get_env_variable('SEARCH_GROUP_ID'))
+        self.STORAGE_GROUP_ID = int(self._get_env_variable('STORAGE_GROUP_ID'))
         self.ADMIN_ID = self._get_env_variable('ADMIN_ID')
 
         # Enhanced MongoDB connection with error handling
@@ -99,7 +100,7 @@ class MovieBot:
 
     async def add_movie(self, update: Update, context: CallbackContext) -> None:
         """Add movie to the database with enhanced error handling."""
-        if update.effective_chat.id != int(self.STORAGE_GROUP_ID):
+        if update.effective_chat.id != self.STORAGE_GROUP_ID:
             await context.bot.send_message(
                 chat_id=update.effective_chat.id, 
                 text="❌ Movie uploads are only allowed in the designated storage group."
@@ -134,7 +135,7 @@ class MovieBot:
 
     async def search_movie(self, update: Update, context: CallbackContext) -> None:
         """Enhanced movie search with more robust error handling."""
-        if update.effective_chat.id != int(self.SEARCH_GROUP_ID):
+        if update.effective_chat.id != self.SEARCH_GROUP_ID:
             await context.bot.send_message(
                 chat_id=update.effective_chat.id, 
                 text="❌ Movie searches are only allowed in the designated search group."
@@ -168,6 +169,57 @@ class MovieBot:
                 text="❌ An error occurred during the movie search."
             )
 
+    async def clear_search_group(self, context: CallbackContext = None) -> None:
+        """
+        Clear all messages in the search group.
+        
+        Args:
+            context (CallbackContext, optional): Telegram bot context
+        """
+        try:
+            # Get the bot from context or create a new application
+            if context:
+                bot = context.bot
+            else:
+                application = ApplicationBuilder().token(self.TOKEN).build()
+                bot = application.bot
+
+            # Fetch all messages in the group and delete them
+            async def delete_messages():
+                try:
+                    # Get the latest messages
+                    messages = await bot.get_chat_messages(
+                        chat_id=self.SEARCH_GROUP_ID, 
+                        limit=None  # Delete all messages
+                    )
+
+                    # Delete messages
+                    for message in messages:
+                        try:
+                            await bot.delete_message(
+                                chat_id=self.SEARCH_GROUP_ID, 
+                                message_id=message.message_id
+                            )
+                        except Exception as delete_error:
+                            logger.warning(f"Could not delete message {message.message_id}: {delete_error}")
+
+                    # Send a cleanup notification
+                    await bot.send_message(
+                        chat_id=self.SEARCH_GROUP_ID, 
+                        text="🧹 Group messages have been automatically cleared for privacy and maintenance."
+                    )
+
+                    logger.info("Search group messages cleared successfully")
+
+                except Exception as e:
+                    logger.error(f"Error clearing search group messages: {e}")
+
+            # Run the deletion process
+            await delete_messages()
+
+        except Exception as main_error:
+            logger.error(f"Unexpected error in clear_search_group: {main_error}")
+
     async def handle_text_message(self, update: Update, context: CallbackContext) -> None:
         """Centralized message handling with funny responses and movie search."""
         user_message = update.message.text.strip().lower()
@@ -183,6 +235,24 @@ class MovieBot:
         
         # If no funny response, attempt movie search
         await self.search_movie(update, context)
+
+    def _schedule_group_cleaning(self, application):
+        """
+        Schedule daily group message cleaning.
+        
+        Args:
+            application: Telegram bot application
+        """
+        async def scheduled_cleanup():
+            while True:
+                # Schedule to run at midnight
+                schedule.every(1).day.at("00:00").do(
+                    asyncio.create_task, 
+                    self.clear_search_group(context=application)
+                )
+                await asyncio.sleep(60)  # Check every minute
+
+        return scheduled_cleanup()
 
     async def run(self) -> None:
         """Initialize and run the bot."""
@@ -200,12 +270,21 @@ class MovieBot:
 
         try:
             logger.info("🤖 Bot starting...")
-            await application.run_polling(drop_pending_updates=True)
+            
+            # Create tasks for bot polling and scheduled cleaning
+            polling_task = asyncio.create_task(application.run_polling(drop_pending_updates=True))
+            cleaning_task = asyncio.create_task(self._schedule_group_cleaning(application))
+            
+            # Wait for both tasks
+            await asyncio.gather(polling_task, cleaning_task)
+
         except Exception as e:
             logger.critical(f"Bot startup failed: {e}")
 
 def main():
-    """Entry point for the bot application."""
+    """
+    Main entry point for the movie management bot.
+    """
     nest_asyncio.apply()
     bot = MovieBot()
     
