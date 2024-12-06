@@ -3,6 +3,7 @@ import re
 import asyncio
 import nest_asyncio
 from typing import List, Dict, Any
+from flask import Flask, request
 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
@@ -30,6 +31,13 @@ logging.basicConfig(
     filemode='a'
 )
 logger = logging.getLogger(__name__)
+
+# Flask app for port binding
+app = Flask(__name__)
+
+@app.route('/')
+def health_check():
+    return "Bot is running!", 200
 
 class MovieBot:
     def __init__(self):
@@ -222,7 +230,17 @@ class MovieBot:
 
         try:
             logger.info("🤖 Bot starting...")
-            await application.run_polling(drop_pending_updates=True)
+            # Start the bot polling in the background
+            await application.initialize()
+            await application.start()
+            
+            # Run Flask app to bind to a port
+            import threading
+            threading.Thread(target=lambda: app.run(host='0.0.0.0', port=int(os.getenv('PORT', 5000)))).start()
+            
+            # Continue bot polling
+            await application.updater.start_polling(drop_pending_updates=True)
+            await application.updater.idle()
         except Exception as e:
             logger.critical(f"Bot startup failed: {e}")
 
