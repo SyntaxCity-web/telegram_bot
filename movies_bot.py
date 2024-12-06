@@ -195,6 +195,7 @@ async def error_handler(update: Update, context: CallbackContext):
 # Main application
 async def main():
     """Start the bot."""
+    logging.info("Starting the application...")
     application = ApplicationBuilder().token(TOKEN).build()
 
     # Command handlers
@@ -213,18 +214,24 @@ async def main():
     application.job_queue.run_repeating(delete_messages_task, interval=3600, first=0)
 
     # Start the bot
+    logging.info("Running polling...")
     await application.run_polling()
 
 if __name__ == "__main__":
     import sys
-    import asyncio
 
     try:
-        # If already running loop, nest and schedule main function
-        nest_asyncio.apply()  # Apply nest_asyncio here if running inside environments like Jupyter
-        asyncio.ensure_future(main())  # Schedule main coroutine
-        asyncio.get_event_loop().run_forever()  # Start the event loop
+        # Check if an event loop is already running
+        loop = asyncio.get_event_loop()
+        if loop and loop.is_running():
+            # Nest asyncio to allow it to work in environments with an already running loop
+            nest_asyncio.apply()
+            asyncio.ensure_future(main())  # Schedule main() coroutine
+        else:
+            asyncio.run(main())  # Normal execution
     except (KeyboardInterrupt, SystemExit):
-        logging.info("Bot stopped by user.")
+        logging.info("Bot stopped.")
         sys.exit(0)
-
+    except Exception as e:
+        logging.error(f"Critical error: {e}")
+        sys.exit(1)
