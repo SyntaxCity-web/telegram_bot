@@ -20,9 +20,12 @@ nest_asyncio.apply()
 # Load environment variables
 TOKEN = os.getenv('TOKEN')
 DB_URL = os.getenv('DB_URL')
-SEARCH_GROUP_ID = int(os.getenv('SEARCH_GROUP_ID', 0))
-STORAGE_GROUP_ID = int(os.getenv('STORAGE_GROUP_ID', 0))
-ADMIN_ID = int(os.getenv('ADMIN_ID', 0))
+try:
+    SEARCH_GROUP_ID = int(os.getenv('SEARCH_GROUP_ID', 0))
+    STORAGE_GROUP_ID = int(os.getenv('STORAGE_GROUP_ID', 0))
+    ADMIN_ID = int(os.getenv('ADMIN_ID', 0))
+except ValueError:
+    raise EnvironmentError("Group IDs must be valid integers")
 
 # Ensure critical environment variables are set
 if not TOKEN or not DB_URL or not SEARCH_GROUP_ID or not STORAGE_GROUP_ID:
@@ -43,6 +46,9 @@ logging.basicConfig(
     level=logging.INFO
 )
 
+# Global list to track messages for deletion
+search_group_messages = []
+
 # Helper functions
 def is_in_group(chat_id, group_id):
     """Check if a chat ID matches the specified group ID."""
@@ -60,7 +66,7 @@ async def start(update: Update, context: CallbackContext):
 
         welcome_message = (
             f"Hi {user_name}! 👋 I'm Olive, your group assistant. 🎉\n"
-            f"Use /help to learn how to use me. Have fun! 😄"
+            f"Have fun! 😄"
         )
         await update.message.reply_text(text=welcome_message, reply_markup=reply_markup)
     except Exception as e:
@@ -130,14 +136,14 @@ async def get_user_id(update: Update, context: CallbackContext):
         logging.error(f"Error getting user ID: {e}")
         await update.message.reply_text("Oops! Something went wrong. 😕 Please try again later.")
 
-async def delete_old_messages():
+async def delete_old_messages(context: CallbackContext):
     """Delete messages in the search group that are older than 24 hours."""
     while True:
         try:
             now = datetime.datetime.utcnow()
             to_delete = []
 
-            for message in search_group_messages:
+            for message in search_group_messages.copy():
                 if (now - message["time"]).total_seconds() > 86400:  # 24 hours
                     try:
                         await context.bot.delete_message(chat_id=message["chat_id"], message_id=message["message_id"])
@@ -152,7 +158,6 @@ async def delete_old_messages():
         except Exception as e:
             logging.error(f"Error in delete_old_messages task: {e}")
 
-
 async def welcome_new_member(update: Update, context: CallbackContext):
     """Send a welcome message when a new user joins the search group."""
     try:
@@ -162,7 +167,7 @@ async def welcome_new_member(update: Update, context: CallbackContext):
                     f"👋 Welcome {member.full_name}! 🎉\n\n"
                     f"I'm Olive, your group assistant. 🤖\n"
                     f"Feel free to ask for a movie by its name, and I'll try to find it for you. 🎥"
-                    f"Use /help if you need assistance. Enjoy your stay! 😄"
+                    f"Enjoy your stay! 😄"
                 )
                 await context.bot.send_message(chat_id=SEARCH_GROUP_ID, text=welcome_message)
     except Exception as e:
@@ -172,6 +177,12 @@ async def welcome_new_member(update: Update, context: CallbackContext):
 async def handle_text_message(update: Update, context: CallbackContext):
     """Handle general text messages."""
     try:
+        # Track message for potential deletion
+        search_group_messages.append({
+            "chat_id": update.effective_chat.id,
+            "message_id": update.message.message_id,
+            "time": datetime.datetime.utcnow()
+        })
         await search_movie(update, context)
     except Exception as e:
         logging.error(f"Error handling text message: {e}")
@@ -200,6 +211,9 @@ async def main():
 
     # Global error handler
     application.add_error_handler(error_handler)
+
+    # Background task for deleting old messages
+    application.job_queue.run_task(delete_old_messages)
 
     # Start the bot
     await application.run_polling()
