@@ -168,14 +168,6 @@ class MovieBot:
                 text="❌ An error occurred during the movie search."
             )
 
-    
-    async def welcome_new_member(update: Update, context: CallbackContext):
-    """Send a welcome message when a new user joins the search group."""
-    for member in update.message.new_chat_members:
-        await context.bot.send_message(chat_id=SEARCH_GROUP_ID, text=f"Welcome {member.full_name}! Ask for a movie name.")
-
-    
-
     async def handle_text_message(self, update: Update, context: CallbackContext) -> None:
         """Centralized message handling with funny responses and movie search."""
         user_message = update.message.text.strip().lower()
