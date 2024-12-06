@@ -53,24 +53,24 @@ async def start(update: Update, context: CallbackContext):
     try:
         user_name = update.effective_user.full_name
         keyboard = [[
-            InlineKeyboardButton("Add me to your chat!", url=f"https://t.me/{context.bot.username}")
+            InlineKeyboardButton("Add me to your chat! 🤖", url=f"https://t.me/{context.bot.username}")
         ]]
         reply_markup = InlineKeyboardMarkup(keyboard)
 
         welcome_message = (
-            f"Hi {user_name}! I'm Olive, your group assistant. "
-            f"Use /help to learn how to use me. Have fun!"
+            f"Hi {user_name}! 👋 I'm Olive, your group assistant. 🎉\n"
+            f"Use /help to learn how to use me. Have fun! 😄"
         )
         await update.message.reply_text(text=welcome_message, reply_markup=reply_markup)
     except Exception as e:
         logging.error(f"Error in /start command: {e}")
-        await update.message.reply_text("Oops! Something went wrong. Please try again later.")
+        await update.message.reply_text("Oops! Something went wrong. 😕 Please try again later.")
 
 async def add_movie(update: Update, context: CallbackContext):
     """Handle movie file uploads in the storage group."""
     try:
         if not is_in_group(update.effective_chat.id, STORAGE_GROUP_ID):
-            await update.message.reply_text("Please upload movies in the designated storage group.")
+            await update.message.reply_text("Please upload movies in the designated storage group. 🎬")
             return
 
         if update.message.document:
@@ -78,26 +78,26 @@ async def add_movie(update: Update, context: CallbackContext):
             file_id = update.message.document.file_id
             # Insert movie into MongoDB
             collection.insert_one({"name": movie_name, "file_id": file_id})
-            await update.message.reply_text(f"Added movie: {movie_name}")
+            await update.message.reply_text(f"Added movie: {movie_name} 🎥")
         else:
-            await update.message.reply_text("No file found. Please send a movie file.")
+            await update.message.reply_text("No file found. Please send a movie file. 📁")
     except errors.PyMongoError as e:
         logging.error(f"MongoDB error while adding movie: {e}")
-        await update.message.reply_text("There was an error while saving the movie. Please try again later.")
+        await update.message.reply_text("There was an error while saving the movie. 🛑 Please try again later.")
     except Exception as e:
         logging.error(f"Error adding movie: {e}")
-        await update.message.reply_text("Oops! Something went wrong. Please try again later.")
+        await update.message.reply_text("Oops! Something went wrong. 😕 Please try again later.")
 
 async def search_movie(update: Update, context: CallbackContext):
     """Search for a movie in the database."""
     try:
         if not is_in_group(update.effective_chat.id, SEARCH_GROUP_ID):
-            await update.message.reply_text("Use this feature in the search group.")
+            await update.message.reply_text("Use this feature in the search group. 🔍")
             return
 
         movie_name = update.message.text.strip()
         if not movie_name:
-            await update.message.reply_text("Please enter a valid movie name.")
+            await update.message.reply_text("Please enter a valid movie name. 🎬")
             return
 
         # Search using regex
@@ -106,28 +106,28 @@ async def search_movie(update: Update, context: CallbackContext):
 
         if results:
             for result in results:
-                await update.message.reply_text(f"Found movie: {result['name']}")
+                await update.message.reply_text(f"Found movie: {result['name']} 🎥")
                 await context.bot.send_document(chat_id=update.effective_chat.id, document=result['file_id'])
         else:
-            await update.message.reply_text("Movie not found.")
+            await update.message.reply_text("Movie not found. 😔 Try a different search.")
     except errors.PyMongoError as e:
         logging.error(f"MongoDB error while searching for movie: {e}")
-        await update.message.reply_text("There was an error while searching. Please try again later.")
+        await update.message.reply_text("There was an error while searching. 🛑 Please try again later.")
     except Exception as e:
         logging.error(f"Error searching movie: {e}")
-        await update.message.reply_text("Oops! Something went wrong. Please try again later.")
+        await update.message.reply_text("Oops! Something went wrong. 😕 Please try again later.")
 
 async def get_user_id(update: Update, context: CallbackContext):
     """Return the user's ID."""
     try:
         if is_in_group(update.effective_chat.id, SEARCH_GROUP_ID):
             user_id = update.effective_user.id
-            await update.message.reply_text(f"Your User ID: {user_id}")
+            await update.message.reply_text(f"Your User ID: {user_id} 🆔")
         else:
-            await update.message.reply_text("This command works only in the search group.")
+            await update.message.reply_text("This command works only in the search group. 🔍")
     except Exception as e:
         logging.error(f"Error getting user ID: {e}")
-        await update.message.reply_text("Oops! Something went wrong. Please try again later.")
+        await update.message.reply_text("Oops! Something went wrong. 😕 Please try again later.")
 
 async def welcome_new_member(update: Update, context: CallbackContext):
     """Send a welcome message when a new user joins the search group."""
@@ -136,14 +136,14 @@ async def welcome_new_member(update: Update, context: CallbackContext):
             for member in update.message.new_chat_members:
                 welcome_message = (
                     f"👋 Welcome {member.full_name}! 🎉\n\n"
-                    f"I'm Olive, your group assistant. "
-                    f"Feel free to ask for a movie by its name, and I'll try to find it for you. "
-                    f"Use /help if you need assistance. Enjoy your stay!"
+                    f"I'm Olive, your group assistant. 🤖\n"
+                    f"Feel free to ask for a movie by its name, and I'll try to find it for you. 🎥"
+                    f"Use /help if you need assistance. Enjoy your stay! 😄"
                 )
                 await context.bot.send_message(chat_id=SEARCH_GROUP_ID, text=welcome_message)
     except Exception as e:
         logging.error(f"Error welcoming new member: {e}")
-        await update.message.reply_text("Sorry, I couldn't welcome the new member properly.")
+        await update.message.reply_text("Sorry, I couldn't welcome the new member properly. 😞")
 
 async def handle_text_message(update: Update, context: CallbackContext):
     """Handle general text messages."""
@@ -151,14 +151,14 @@ async def handle_text_message(update: Update, context: CallbackContext):
         await search_movie(update, context)
     except Exception as e:
         logging.error(f"Error handling text message: {e}")
-        await update.message.reply_text("Sorry, something went wrong while processing your message.")
+        await update.message.reply_text("Sorry, something went wrong while processing your message. 😕")
 
 # Global error handling for unhandled exceptions
 async def error_handler(update: Update, context: CallbackContext):
     """Handle uncaught errors globally."""
     logging.error(f"Unhandled error: {context.error}")
     if update:
-        await update.message.reply_text("Oops! Something went wrong. Please try again later.")
+        await update.message.reply_text("Oops! Something went wrong. 😕 Please try again later.")
 
 # Main application
 async def main():
