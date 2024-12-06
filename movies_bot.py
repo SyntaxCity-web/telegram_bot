@@ -129,6 +129,29 @@ async def get_user_id(update: Update, context: CallbackContext):
         logging.error(f"Error getting user ID: {e}")
         await update.message.reply_text("Oops! Something went wrong. 😕 Please try again later.")
 
+async def delete_old_messages():
+    """Delete messages in the search group that are older than 24 hours."""
+    while True:
+        try:
+            now = datetime.datetime.utcnow()
+            to_delete = []
+
+            for message in search_group_messages:
+                if (now - message["time"]).total_seconds() > 86400:  # 24 hours
+                    try:
+                        await context.bot.delete_message(chat_id=message["chat_id"], message_id=message["message_id"])
+                        to_delete.append(message)
+                    except Exception as e:
+                        logging.error(f"Failed to delete message {message['message_id']}: {e}")
+
+            for message in to_delete:
+                search_group_messages.remove(message)
+
+            await asyncio.sleep(3600)  # Check hourly
+        except Exception as e:
+            logging.error(f"Error in delete_old_messages task: {e}")
+
+
 async def welcome_new_member(update: Update, context: CallbackContext):
     """Send a welcome message when a new user joins the search group."""
     try:
