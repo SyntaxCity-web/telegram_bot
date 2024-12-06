@@ -128,15 +128,17 @@ async def funny_questions_handler(update: Update, context: CallbackContext):
 async def handle_text_message(update: Update, context: CallbackContext):
     """Handle text messages: try to find a movie or respond to funny questions."""
     user_message = update.message.text.strip().lower()  # Clean and convert message to lowercase
-    
-    # Check for funny questions first
-    for question, response in FUNNY_RESPONSES.items():
-        if question in user_message:
-            await context.bot.send_message(chat_id=update.effective_chat.id, text=response)
-            return
-    
-    # If no funny questions matched, search for a movie
-    await search_movie_by_name(update, context)
+
+    # Check if the user is in the search group
+    if update.effective_chat.id == int(SEARCH_GROUP_ID):
+        # If in the search group, handle movie search
+        await search_movie_by_name(update, context)
+    else:
+        # If not in the search group, respond to funny questions
+        for question, response in FUNNY_RESPONSES.items():
+            if question in user_message:
+                await context.bot.send_message(chat_id=update.effective_chat.id, text=response)
+                return  # Exit after responding to the first matched funny question
 
 async def main():
     """Start the bot."""
