@@ -53,7 +53,7 @@ async def start(update: Update, context: CallbackContext):
     try:
         user_name = update.effective_user.full_name
         keyboard = [[
-            InlineKeyboardButton("Add me to your chat! 🤖", url=f"https://t.me/+ERz0bGWEHHBmNTU9{context.bot.username}")
+            InlineKeyboardButton("Add me to your chat! 🤖", url="https://t.me/+ERz0bGWEHHBmNTU9")
         ]]
         reply_markup = InlineKeyboardMarkup(keyboard)
 
