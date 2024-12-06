@@ -215,5 +215,20 @@ async def main():
     # Start the bot
     await application.run_polling()
 
-if __name__ == '__main__':
-    asyncio.run(main())
+if __name__ == "__main__":
+    import sys
+    import asyncio
+
+    try:
+        # Check if an event loop is already running
+        loop = asyncio.get_event_loop()
+        if loop and loop.is_running():
+            # Nest asyncio to allow it to work in environments with an already running loop
+            nest_asyncio.apply()
+            asyncio.ensure_future(main())  # Schedule main() coroutine
+        else:
+            asyncio.run(main())  # Normal execution
+    except (KeyboardInterrupt, SystemExit):
+        logging.info("Bot stopped by user.")
+        sys.exit(0)
+
