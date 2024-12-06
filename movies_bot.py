@@ -10,11 +10,21 @@ from pymongo import MongoClient
 nest_asyncio.apply()
 
 # Constants
-TOKEN = "7225498446:AAEE3HDDa-3IoM0b76ajKUuWKZ2uAU1lwhc"  # Replace with your Telegram Bot Token
-DB_URL = "mongodb+srv://machupanoor8:machupanoor8@cluster0.ppnnllc.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0"  # Replace with your MongoDB connection string
-SEARCH_GROUP_ID = '-1002385916738'  # Replace with your search group ID
-STORAGE_GROUP_ID = '-1002419819856'  # Replace with your storage group ID
-ADMIN_ID = 5790440984  # Replace with your admin ID
+# TOKEN = "7225498446:AAEE3HDDa-3IoM0b76ajKUuWKZ2uAU1lwhc"  # Replace with your Telegram Bot Token
+# DB_URL = "mongodb+srv://machupanoor8:machupanoor8@cluster0.ppnnllc.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0"  # Replace with your MongoDB connection string
+# SEARCH_GROUP_ID = '-1002385916738'  # Replace with your search group ID
+# STORAGE_GROUP_ID = '-1002419819856'  # Replace with your storage group ID
+# ADMIN_ID = 5790440984  # Replace with your admin ID
+
+import os
+
+TOKEN = os.environ.get('TOKEN')
+DB_URL = os.environ.get('DB_URL')
+SEARCH_GROUP_ID = os.environ.get('SEARCH_GROUP_ID')
+STORAGE_GROUP_ID = os.environ.get('STORAGE_GROUP_ID')
+ADMIN_ID = os.environ.get('ADMIN_ID')
+
+
 
 # MongoDB client setup
 client = MongoClient(DB_URL)
