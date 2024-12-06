@@ -220,11 +220,10 @@ if __name__ == "__main__":
     import asyncio
 
     try:
-        loop = asyncio.get_event_loop()
-        if loop.is_running():
-            asyncio.ensure_future(main())  # Use ensure_future instead of run
-        else:
-            loop.run_until_complete(main())  # For normal execution
+        # If already running loop, nest and schedule main function
+        nest_asyncio.apply()  # Apply nest_asyncio here if running inside environments like Jupyter
+        asyncio.ensure_future(main())  # Schedule main coroutine
+        asyncio.get_event_loop().run_forever()  # Start the event loop
     except (KeyboardInterrupt, SystemExit):
         logging.info("Bot stopped by user.")
         sys.exit(0)
