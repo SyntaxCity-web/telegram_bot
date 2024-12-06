@@ -3,21 +3,29 @@ import re
 import asyncio
 import nest_asyncio
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, CallbackContext
+from telegram.ext import (
+    ApplicationBuilder,
+    CommandHandler,
+    MessageHandler,
+    filters,
+    CallbackContext
+)
 from pymongo import MongoClient
+import os
 
 # Patch asyncio to allow nested event loops
 nest_asyncio.apply()
 
-import os
+# Load environment variables
+TOKEN = os.getenv('TOKEN')
+DB_URL = os.getenv('DB_URL')
+SEARCH_GROUP_ID = int(os.getenv('SEARCH_GROUP_ID', 0))
+STORAGE_GROUP_ID = int(os.getenv('STORAGE_GROUP_ID', 0))
+ADMIN_ID = int(os.getenv('ADMIN_ID', 0))
 
-TOKEN = os.environ.get('TOKEN')
-DB_URL = os.environ.get('DB_URL')
-SEARCH_GROUP_ID = os.environ.get('SEARCH_GROUP_ID')
-STORAGE_GROUP_ID = os.environ.get('STORAGE_GROUP_ID')
-ADMIN_ID = os.environ.get('ADMIN_ID')
-
-
+# Ensure critical environment variables are set
+if not TOKEN or not DB_URL or not SEARCH_GROUP_ID or not STORAGE_GROUP_ID:
+    raise EnvironmentError("Required environment variables are missing.")
 
 # MongoDB client setup
 client = MongoClient(DB_URL)
@@ -25,9 +33,12 @@ db = client['MoviesDB']
 collection = db['Movies']
 
 # Logging setup
-logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
+logging.basicConfig(
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    level=logging.INFO
+)
 
-# List of funny questions and responses
+# Predefined responses for fun questions
 FUNNY_RESPONSES = {
     "what's your favorite color?": "I love the color of binary! 0s and 1s are so pretty!",
     "tell me a joke": "Why did the scarecrow win an award? Because he was outstanding in his field!",
@@ -36,125 +47,106 @@ FUNNY_RESPONSES = {
     "what's your purpose?": "To make your life easier, one response at a time! And to tell jokes!"
 }
 
-async def start(update: Update, context: CallbackContext):
-    """Send a welcome message when the command /start is issued."""
-    user_name = update.effective_user.full_name  # Get the user's full name
+# Helper functions
+def is_in_group(chat_id, group_id):
+    """Check if a chat ID matches the specified group ID."""
+    return chat_id == group_id
 
-    # Create inline button to add the bot to chat
-    keyboard = [
-        [InlineKeyboardButton("Add me to your chat!", url="https://t.me/+ERz0bGWEHHBmNTU9")]  # Replace with your bot's username
-    ]
+# Handlers
+async def start(update: Update, context: CallbackContext):
+    """Handle the /start command."""
+    user_name = update.effective_user.full_name
+
+    keyboard = [[
+        InlineKeyboardButton("Add me to your chat!", url=f"https://t.me/{context.bot.username}")
+    ]]
     reply_markup = InlineKeyboardMarkup(keyboard)
 
-    # Send the welcome message with the button
     welcome_message = (
-        f"Hey there! My name is Olive - I'm here to help you manage your groups! "
-        f"Use /help to find out more about how to use me to my full potential."
+        f"Hi {user_name}! I'm Olive, your group assistant. "
+        f"Use /help to learn how to use me. Have fun!"
     )
-    
-    await context.bot.send_message(chat_id=update.effective_chat.id, text=welcome_message, reply_markup=reply_markup)
+    await update.message.reply_text(text=welcome_message, reply_markup=reply_markup)
 
 async def add_movie(update: Update, context: CallbackContext):
-    """Add movie to the database when a file is sent in the storage group."""
-    if update.effective_chat.id == int(STORAGE_GROUP_ID):
-        file_info = update.message.document
-        if file_info:
-            movie_name = file_info.file_name
-            file_id = file_info.file_id
-            
-            # Insert movie into MongoDB
-            collection.insert_one({"name": movie_name, "file_id": file_id})
-            await context.bot.send_message(chat_id=STORAGE_GROUP_ID, text=f"Added movie: {movie_name}")
+    """Handle movie file uploads in the storage group."""
+    if not is_in_group(update.effective_chat.id, STORAGE_GROUP_ID):
+        await update.message.reply_text("Please upload movies in the designated storage group.")
+        return
+
+    if update.message.document:
+        movie_name = update.message.document.file_name
+        file_id = update.message.document.file_id
+        
+        collection.insert_one({"name": movie_name, "file_id": file_id})
+        await update.message.reply_text(f"Added movie: {movie_name}")
+
+async def search_movie(update: Update, context: CallbackContext):
+    """Search for a movie in the database."""
+    if not is_in_group(update.effective_chat.id, SEARCH_GROUP_ID):
+        await update.message.reply_text("Use this feature in the search group.")
+        return
+
+    movie_name = update.message.text.strip()
+    if not movie_name:
+        await update.message.reply_text("Please enter a valid movie name.")
+        return
+
+    # Search using regex
+    regex_pattern = re.compile(re.escape(movie_name), re.IGNORECASE)
+    results = list(collection.find({"name": {"$regex": regex_pattern}}))
+
+    if results:
+        for result in results:
+            await update.message.reply_text(f"Found movie: {result['name']}")
+            await context.bot.send_document(chat_id=update.effective_chat.id, document=result['file_id'])
     else:
-        await context.bot.send_message(chat_id=update.effective_chat.id, text="You can only upload movies in the designated storage group.")
-
-async def search_movie_by_name(update: Update, context: CallbackContext):
-    """Search for a movie in the database when a user sends a message in the search group."""
-    logging.info(f"Received message for search in group: {update.effective_chat.id}")
-    
-    # Check if the user is in the search group
-    if update.effective_chat.id == int(SEARCH_GROUP_ID):
-        movie_name = update.message.text.strip()  # Capture and strip whitespace from the message (movie name)
-        logging.info(f"Searching for movie: '{movie_name}'")
-
-        if movie_name:
-            # Using regex to search for the movie name
-            regex_pattern = re.compile(re.escape(movie_name), re.IGNORECASE)
-            logging.info(f"Using regex pattern: {regex_pattern}")
-
-            try:
-                # Search the MongoDB collection using the regex pattern
-                results = collection.find({"name": {"$regex": regex_pattern}})
-
-                # Check if results were found
-                results_list = list(results)  # Convert cursor to a list
-                if results_list:
-                    for result in results_list:
-                        file_id = result['file_id']
-                        movie_title = result['name']
-                        logging.info(f"Found movie: {movie_title} with file_id: {file_id}")
-
-                        # Send the movie title and the file as a response
-                        await context.bot.send_message(chat_id=update.effective_chat.id, text=f"Found movie: {movie_title}")
-                        await context.bot.send_document(chat_id=update.effective_chat.id, document=file_id)
-                else:
-                    logging.warning(f"No movie found for search term: '{movie_name}'")
-                    await context.bot.send_message(chat_id=update.effective_chat.id, text="Movie not found.")
-            except Exception as e:
-                logging.error(f"An error occurred while searching: {str(e)}")  # Log the actual error message
-                await context.bot.send_message(chat_id=update.effective_chat.id, text="An error occurred while searching.")
-    else:
-        await context.bot.send_message(chat_id=update.effective_chat.id, text="Please use this feature in the designated search group.")
+        await update.message.reply_text("Movie not found.")
 
 async def get_user_id(update: Update, context: CallbackContext):
-    """Return the user's ID when /id command is issued in the search group."""
-    if update.effective_chat.id == int(SEARCH_GROUP_ID):
-        user_id = update.effective_user.id  # Get the user's ID
-        await context.bot.send_message(chat_id=update.effective_chat.id, text=f"Your User ID: {user_id}")
+    """Return the user's ID."""
+    if is_in_group(update.effective_chat.id, SEARCH_GROUP_ID):
+        user_id = update.effective_user.id
+        await update.message.reply_text(f"Your User ID: {user_id}")
     else:
-        await context.bot.send_message(chat_id=update.effective_chat.id, text="You can only use the /id command in the designated search group.")
+        await update.message.reply_text("This command works only in the search group.")
 
 async def welcome_new_member(update: Update, context: CallbackContext):
-    """Send a welcome message when a new user joins the search group."""
+    """Welcome new members in the search group."""
     for member in update.message.new_chat_members:
-        await context.bot.send_message(chat_id=SEARCH_GROUP_ID, text=f"Welcome {member.full_name}! Ask for a movie name.")
+        await update.message.reply_text(f"Welcome {member.full_name}! Ask for a movie name.")
 
-async def funny_questions_handler(update: Update, context: CallbackContext):
-    """Respond to funny questions."""
-    user_message = update.message.text.lower()  # Convert user message to lowercase
+async def handle_funny_questions(update: Update, context: CallbackContext):
+    """Respond to predefined funny questions."""
+    user_message = update.message.text.lower()
     for question, response in FUNNY_RESPONSES.items():
         if question in user_message:
-            await context.bot.send_message(chat_id=update.effective_chat.id, text=response)
-            return  # Exit after responding to the first matched funny question
+            await update.message.reply_text(response)
+            return
 
 async def handle_text_message(update: Update, context: CallbackContext):
-    """Handle text messages: try to find a movie or respond to funny questions."""
-    user_message = update.message.text.strip().lower()  # Clean and convert message to lowercase
-    
-    # Check for funny questions first
-    for question, response in FUNNY_RESPONSES.items():
-        if question in user_message:
-            await context.bot.send_message(chat_id=update.effective_chat.id, text=response)
-            return
-    
-    # If no funny questions matched, search for a movie
-    await search_movie_by_name(update, context)
+    """Handle general text messages."""
+    # Prioritize funny questions
+    await handle_funny_questions(update, context)
+    # If not a funny question, treat it as a movie search
+    await search_movie(update, context)
 
+# Main application
 async def main():
     """Start the bot."""
-    # Create an Application object instead of Updater
     application = ApplicationBuilder().token(TOKEN).build()
 
-    # Register handlers
+    # Command handlers
     application.add_handler(CommandHandler("start", start))
-    application.add_handler(MessageHandler(filters.Document.ALL, add_movie))
-    application.add_handler(CommandHandler("id", get_user_id))  # New handler for /id command
-    application.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, welcome_new_member))
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text_message))  # Handle all text messages for search or funny questions
+    application.add_handler(CommandHandler("id", get_user_id))
 
-    # Start polling
+    # Message handlers
+    application.add_handler(MessageHandler(filters.Document.ALL, add_movie))
+    application.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, welcome_new_member))
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text_message))
+
+    # Start the bot
     await application.run_polling()
 
 if __name__ == '__main__':
-    # Use asyncio.run to handle the event loop automatically
     asyncio.run(main())
