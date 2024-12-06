@@ -25,6 +25,15 @@ collection = db['Movies']
 # Logging setup
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 
+# List of funny questions and responses
+FUNNY_RESPONSES = {
+    "what's your favorite color?": "I love the color of binary! 0s and 1s are so pretty!",
+    "tell me a joke": "Why did the scarecrow win an award? Because he was outstanding in his field!",
+    "how are you?": "I'm just a bunch of code, but thanks for asking! How are you?",
+    "do you believe in love?": "Of course! But I'm still waiting for my algorithm to find the one!",
+    "what's your purpose?": "To make your life easier, one response at a time! And to tell jokes!"
+}
+
 async def start(update: Update, context: CallbackContext):
     """Send a welcome message when the command /start is issued."""
     user_name = update.effective_user.full_name  # Get the user's full name
@@ -109,34 +118,25 @@ async def welcome_new_member(update: Update, context: CallbackContext):
         await context.bot.send_message(chat_id=SEARCH_GROUP_ID, text=f"Welcome {member.full_name}! Ask for a movie name.")
 
 async def funny_questions_handler(update: Update, context: CallbackContext):
-    """Respond to funny questions only if the question is relevant."""
+    """Respond to funny questions."""
     user_message = update.message.text.lower()  # Convert user message to lowercase
-    
-    # Direct matching of the user's message to funny questions
-    if "what's your favorite color?" in user_message:
-        await context.bot.send_message(chat_id=update.effective_chat.id, text="I love the color of binary! 0s and 1s are so pretty!")
-    elif "tell me a joke" in user_message:
-        await context.bot.send_message(chat_id=update.effective_chat.id, text="Why did the scarecrow win an award? Because he was outstanding in his field!")
-    elif "how are you?" in user_message:
-        await context.bot.send_message(chat_id=update.effective_chat.id, text="I'm just a bunch of code, but thanks for asking! How are you?")
-    elif "do you believe in love?" in user_message:
-        await context.bot.send_message(chat_id=update.effective_chat.id, text="Of course! But I'm still waiting for my algorithm to find the one!")
-    elif "what's your purpose?" in user_message:
-        await context.bot.send_message(chat_id=update.effective_chat.id, text="To make your life easier, one response at a time! And to tell jokes!")
+    for question, response in FUNNY_RESPONSES.items():
+        if question in user_message:
+            await context.bot.send_message(chat_id=update.effective_chat.id, text=response)
+            return  # Exit after responding to the first matched funny question
 
 async def handle_text_message(update: Update, context: CallbackContext):
-    """Handle text messages: respond to funny questions only."""
+    """Handle text messages: try to find a movie or respond to funny questions."""
     user_message = update.message.text.strip().lower()  # Clean and convert message to lowercase
     
-    # Respond to funny questions
-    await funny_questions_handler(update, context)
-
-    # Ensure no responses in the search or storage group
-    if update.effective_chat.id == int(SEARCH_GROUP_ID) or update.effective_chat.id == int(STORAGE_GROUP_ID):
-        return  # Don't respond to non-funny questions in these groups
-
-    # If no funny questions were matched, don't respond
-    return
+    # Check for funny questions first
+    for question, response in FUNNY_RESPONSES.items():
+        if question in user_message:
+            await context.bot.send_message(chat_id=update.effective_chat.id, text=response)
+            return
+    
+    # If no funny questions matched, search for a movie
+    await search_movie_by_name(update, context)
 
 async def main():
     """Start the bot."""
