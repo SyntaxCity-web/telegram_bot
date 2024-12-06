@@ -136,27 +136,24 @@ async def get_user_id(update: Update, context: CallbackContext):
         logging.error(f"Error getting user ID: {e}")
         await update.message.reply_text("Oops! Something went wrong. 😕 Please try again later.")
 
-async def delete_old_messages(context: CallbackContext):
+async def delete_messages_task(context: CallbackContext):
     """Delete messages in the search group that are older than 24 hours."""
-    while True:
-        try:
-            now = datetime.datetime.utcnow()
-            to_delete = []
+    try:
+        now = datetime.datetime.utcnow()
+        to_delete = []
 
-            for message in search_group_messages.copy():
-                if (now - message["time"]).total_seconds() > 86400:  # 24 hours
-                    try:
-                        await context.bot.delete_message(chat_id=message["chat_id"], message_id=message["message_id"])
-                        to_delete.append(message)
-                    except Exception as e:
-                        logging.error(f"Failed to delete message {message['message_id']}: {e}")
+        for message in search_group_messages.copy():
+            if (now - message["time"]).total_seconds() > 86400:  # 24 hours
+                try:
+                    await context.bot.delete_message(chat_id=message["chat_id"], message_id=message["message_id"])
+                    to_delete.append(message)
+                except Exception as e:
+                    logging.error(f"Failed to delete message {message['message_id']}: {e}")
 
-            for message in to_delete:
-                search_group_messages.remove(message)
-
-            await asyncio.sleep(3600)  # Check hourly
-        except Exception as e:
-            logging.error(f"Error in delete_old_messages task: {e}")
+        for message in to_delete:
+            search_group_messages.remove(message)
+    except Exception as e:
+        logging.error(f"Error in delete_messages_task: {e}")
 
 async def welcome_new_member(update: Update, context: CallbackContext):
     """Send a welcome message when a new user joins the search group."""
@@ -212,8 +209,8 @@ async def main():
     # Global error handler
     application.add_error_handler(error_handler)
 
-    # Background task for deleting old messages
-    application.job_queue.run_task(delete_old_messages)
+    # Schedule periodic message deletion task
+    application.job_queue.run_repeating(delete_messages_task, interval=3600, first=0)
 
     # Start the bot
     await application.run_polling()
