@@ -157,19 +157,40 @@ async def main():
     # Start the background task for deleting old messages
     asyncio.create_task(delete_old_messages(application))
 
-    # Run the bot with existing event loop
-    await application.run_polling()
+    try:
+        # Initialize the application
+        await application.initialize()
+        logging.info("Application initialized.")
 
+        # Start the bot
+        await application.start()
+        logging.info("Bot started.")
+
+        # Start polling for updates
+        await application.updater.start_polling()
+        logging.info("Polling for updates started.")
+
+        # Keep the event loop running
+        await asyncio.Event().wait()
+
+    finally:
+        # Graceful shutdown
+        logging.info("Shutting down the bot...")
+        await application.stop()
+        await application.shutdown()
+        logging.info("Bot shut down successfully.")
 
 if __name__ == "__main__":
     try:
-        # Directly call the application within the event loop without using asyncio.run()
-        asyncio.run(main())  # This will avoid conflicts with an already running loop
+        # Attempt to start the main function with asyncio.run()
+        asyncio.run(main())
     except RuntimeError as e:
-        logging.error(f"Runtime error: {e}")
-        # Try using an already running event loop in environments where asyncio.run() fails
-        loop = asyncio.get_event_loop()
-        if loop.is_running():
-            loop.create_task(main())
+        if "This event loop is already running" in str(e):
+            logging.warning("Detected running event loop, switching to asyncio.create_task().")
+            loop = asyncio.get_event_loop()
+            loop.create_task(main())  # Create a task for the main coroutine
+            loop.run_forever()  # Keep the loop running
         else:
-            logging.error("Failed to start event loop.")
+            logging.error(f"Unexpected RuntimeError: {e}")
+            raise
+
