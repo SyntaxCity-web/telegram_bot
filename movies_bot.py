@@ -34,9 +34,11 @@ def connect_mongo():
     retries = 5
     while retries > 0:
         try:
-            client = MongoClient(DB_URL)
+            client = MongoClient(DB_URL, serverSelectionTimeoutMS=5000)
             db = client['MoviesDB']
             collection = db['Movies']
+            # Test connection to MongoDB
+            client.server_info()
             logging.info("MongoDB connection successful.")
             return collection
         except errors.PyMongoError as e:
@@ -182,8 +184,11 @@ async def start_web_server():
 
 async def main():
     """Start the bot"""
-    # Start the web server first
+    # Start web server first
     web_runner = await start_web_server()
+
+    # Start the event loop monitor
+    asyncio.create_task(monitor_event_loop())
 
     application = ApplicationBuilder().token(TOKEN).build()
 
@@ -197,9 +202,6 @@ async def main():
 
     # Start the background task for deleting old messages
     asyncio.create_task(delete_old_messages(application))
-
-    # Monitor the event loop
-    asyncio.create_task(monitor_event_loop())
 
     try:
         # Initialize the application
@@ -234,8 +236,10 @@ if __name__ == "__main__":
         asyncio.run(main())
     except RuntimeError as e:
         if "This event loop is already running" in str(e):
-            logging.warning("Detected running event loop, switching to asyncio.create_task()")
+            logging.warning("Detected running event loop, switching to asyncio.create_task().")
             loop = asyncio.get_event_loop()
-            loop.create_task(main())
+            loop.create_task(main())  # Create a task for the main coroutine
+            loop.run_forever()  # Keep the loop running
         else:
-            logging.error(f"Unexpected error: {e}")
+            logging.error(f"Unexpected RuntimeError: {e}")
+            raise
