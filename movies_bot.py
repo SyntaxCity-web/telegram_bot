@@ -4,7 +4,8 @@ import datetime
 import asyncio
 import nest_asyncio
 import os
-from typing import Dict, List
+import sys
+from typing import Dict, List, Optional
 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
@@ -27,14 +28,67 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Environment Configuration
+class ConfigurationError(Exception):
+    """Custom exception for configuration errors."""
+    pass
+
 class Config:
-    TOKEN = os.getenv('TELEGRAM_TOKEN')
-    DB_URL = os.getenv('MONGODB_URL')
-    SEARCH_GROUP_ID = int(os.getenv('SEARCH_GROUP_ID', 0))
-    STORAGE_GROUP_ID = int(os.getenv('STORAGE_GROUP_ID', 0))
-    ADMIN_ID = int(os.getenv('ADMIN_ID', 0))
-    PORT = int(os.getenv('PORT', 8080))
+    """Configuration management with extensive validation."""
+    @classmethod
+    def get_env_variable(cls, var_name: str, required: bool = True, default: Optional[str] = None) -> str:
+        """
+        Retrieve and validate an environment variable.
+        
+        :param var_name: Name of the environment variable
+        :param required: Whether the variable is required
+        :param default: Default value if not required
+        :return: Value of the environment variable
+        :raises ConfigurationError: If required variable is missing
+        """
+        value = os.getenv(var_name)
+        
+        if value is None:
+            if required:
+                error_msg = f"Missing required environment variable: {var_name}"
+                logger.error(error_msg)
+                raise ConfigurationError(error_msg)
+            return default
+        
+        return value.strip()
+
+    @classmethod
+    def validate_config(cls):
+        """
+        Validate all critical configuration variables.
+        
+        :raises ConfigurationError: If any required configuration is invalid
+        """
+        try:
+            # Retrieve and validate each critical configuration variable
+            cls.TOKEN = cls.get_env_variable('TELEGRAM_TOKEN')
+            cls.DB_URL = cls.get_env_variable('MONGODB_URL')
+            
+            # Group IDs require special handling to ensure they are valid integers
+            search_group_str = cls.get_env_variable('SEARCH_GROUP_ID')
+            storage_group_str = cls.get_env_variable('STORAGE_GROUP_ID')
+            
+            try:
+                cls.SEARCH_GROUP_ID = int(search_group_str)
+                cls.STORAGE_GROUP_ID = int(storage_group_str)
+            except ValueError:
+                raise ConfigurationError(
+                    "SEARCH_GROUP_ID and STORAGE_GROUP_ID must be valid integers"
+                )
+            
+            # Optional variables with defaults
+            cls.ADMIN_ID = int(cls.get_env_variable('ADMIN_ID', required=False, default='0'))
+            cls.PORT = int(cls.get_env_variable('PORT', required=False, default='8080'))
+            
+            logger.info("Configuration validated successfully")
+        
+        except (ConfigurationError, ValueError) as e:
+            logger.error(f"Configuration validation failed: {e}")
+            raise
 
 # Database Setup
 class DatabaseManager:
@@ -211,24 +265,25 @@ class MovieBot:
 
 async def main():
     """Main entry point for the application."""
-    # Validate configuration
-    if not all([Config.TOKEN, Config.DB_URL, Config.SEARCH_GROUP_ID, Config.STORAGE_GROUP_ID]):
-        logger.error("Missing required environment variables")
-        return
-
     try:
+        # Validate configuration first
+        Config.validate_config()
+
         # Initialize database and bot
         db_manager = DatabaseManager(Config.DB_URL)
         movie_bot = MovieBot(Config.TOKEN, db_manager)
         
         # Run the bot
         await movie_bot.run()
+    
+    except ConfigurationError as config_error:
+        logger.error(f"Configuration Error: {config_error}")
+        sys.exit(1)
     except Exception as e:
         logger.error(f"Critical startup error: {e}")
+        sys.exit(1)
 
 if __name__ == "__main__":
-    import sys
-    
     try:
         asyncio.run(main())
     except (KeyboardInterrupt, SystemExit):
