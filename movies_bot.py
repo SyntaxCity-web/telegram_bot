@@ -3,6 +3,9 @@ import re
 import datetime
 import asyncio
 import nest_asyncio
+import os
+from typing import Dict, List
+
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     ApplicationBuilder,
@@ -12,226 +15,225 @@ from telegram.ext import (
     CallbackContext
 )
 from pymongo import MongoClient, errors
-import os
+from aiohttp import web
 
-# Patch asyncio to allow nested event loops
+# Patch asyncio to allow nested event loops (if needed)
 nest_asyncio.apply()
 
-# Load environment variables
-TOKEN = os.getenv('TOKEN')
-DB_URL = os.getenv('DB_URL')
-try:
-    SEARCH_GROUP_ID = int(os.getenv('SEARCH_GROUP_ID', 0))
-    STORAGE_GROUP_ID = int(os.getenv('STORAGE_GROUP_ID', 0))
-    ADMIN_ID = int(os.getenv('ADMIN_ID', 0))
-except ValueError:
-    raise EnvironmentError("Group IDs must be valid integers")
-
-# Ensure critical environment variables are set
-if not TOKEN or not DB_URL or not SEARCH_GROUP_ID or not STORAGE_GROUP_ID:
-    raise EnvironmentError("Required environment variables are missing.")
-
-# MongoDB client setup with enhanced error handling
-try:
-    client = MongoClient(DB_URL)
-    db = client['MoviesDB']
-    collection = db['Movies']
-except errors.PyMongoError as e:
-    logging.error(f"Error connecting to MongoDB: {e}")
-    raise
-
-# Logging setup
+# Configure logging
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     level=logging.INFO
 )
+logger = logging.getLogger(__name__)
 
-# Global list to track messages for deletion
-search_group_messages = []
+# Environment Configuration
+class Config:
+    TOKEN = os.getenv('TELEGRAM_TOKEN')
+    DB_URL = os.getenv('MONGODB_URL')
+    SEARCH_GROUP_ID = int(os.getenv('SEARCH_GROUP_ID', 0))
+    STORAGE_GROUP_ID = int(os.getenv('STORAGE_GROUP_ID', 0))
+    ADMIN_ID = int(os.getenv('ADMIN_ID', 0))
+    PORT = int(os.getenv('PORT', 8080))
 
-# Helper functions
-def is_in_group(chat_id, group_id):
-    """Check if a chat ID matches the specified group ID."""
-    return chat_id == group_id
+# Database Setup
+class DatabaseManager:
+    def __init__(self, db_url):
+        try:
+            self.client = MongoClient(db_url)
+            self.db = self.client['MoviesDB']
+            self.collection = self.db['Movies']
+        except errors.PyMongoError as e:
+            logger.error(f"MongoDB Connection Error: {e}")
+            raise
 
-# Handlers
-async def start(update: Update, context: CallbackContext):
-    """Handle the /start command."""
-    try:
-        user_name = update.effective_user.full_name
-        keyboard = [[
-            InlineKeyboardButton("Add me to your chat! 🤖", url="https://t.me/+ERz0bGWEHHBmNTU9")
-        ]]
-        reply_markup = InlineKeyboardMarkup(keyboard)
+    def add_movie(self, movie_name: str, file_id: str):
+        """Add a movie to the database."""
+        try:
+            return self.collection.insert_one({"name": movie_name, "file_id": file_id})
+        except errors.PyMongoError as e:
+            logger.error(f"Error adding movie: {e}")
+            raise
 
-        welcome_message = (
-            f"Hi {user_name}! 👋 I'm Olive, your group assistant. 🎉\n"
-            f"Have fun! 😄"
-        )
-        await update.message.reply_text(text=welcome_message, reply_markup=reply_markup)
-    except Exception as e:
-        logging.error(f"Error in /start command: {e}")
-        await update.message.reply_text("Oops! Something went wrong. 😕 Please try again later.")
+    def search_movies(self, query: str):
+        """Search for movies with case-insensitive regex."""
+        try:
+            regex_pattern = re.compile(re.escape(query), re.IGNORECASE)
+            return list(self.collection.find({"name": {"$regex": regex_pattern}}))
+        except errors.PyMongoError as e:
+            logger.error(f"Error searching movies: {e}")
+            raise
 
-async def add_movie(update: Update, context: CallbackContext):
-    """Handle movie file uploads in the storage group."""
-    try:
-        if not is_in_group(update.effective_chat.id, STORAGE_GROUP_ID):
-            await update.message.reply_text("Please upload movies in the designated storage group. 🎬")
-            return
+# Message Tracking
+search_group_messages: List[Dict] = []
 
-        if update.message.document:
-            movie_name = update.message.document.file_name
-            file_id = update.message.document.file_id
-            # Insert movie into MongoDB
-            collection.insert_one({"name": movie_name, "file_id": file_id})
-            await update.message.reply_text(f"Added movie: {movie_name} 🎥")
-        else:
-            await update.message.reply_text("No file found. Please send a movie file. 📁")
-    except errors.PyMongoError as e:
-        logging.error(f"MongoDB error while adding movie: {e}")
-        await update.message.reply_text("There was an error while saving the movie. 🛑 Please try again later.")
-    except Exception as e:
-        logging.error(f"Error adding movie: {e}")
-        await update.message.reply_text("Oops! Something went wrong. 😕 Please try again later.")
+class MovieBot:
+    def __init__(self, token: str, db_manager: DatabaseManager):
+        self.token = token
+        self.db_manager = db_manager
+        self.application = None
 
-async def search_movie(update: Update, context: CallbackContext):
-    """Search for a movie in the database."""
-    try:
-        if not is_in_group(update.effective_chat.id, SEARCH_GROUP_ID):
-            await update.message.reply_text("Use this feature in the search group. 🔍")
-            return
+    async def start_command(self, update: Update, context: CallbackContext):
+        """Handle the /start command."""
+        try:
+            user_name = update.effective_user.full_name
+            keyboard = [[
+                InlineKeyboardButton("Add me to your chat! 🤖", url="https://t.me/+YourInviteLink")
+            ]]
+            reply_markup = InlineKeyboardMarkup(keyboard)
 
-        movie_name = update.message.text.strip()
-        if not movie_name:
-            await update.message.reply_text("Please enter a valid movie name. 🎬")
-            return
+            welcome_message = (
+                f"Hi {user_name}! 👋 I'm Olive, your group assistant. 🎉\n"
+                f"Have fun! 😄"
+            )
+            await update.message.reply_text(text=welcome_message, reply_markup=reply_markup)
+        except Exception as e:
+            logger.error(f"Error in /start command: {e}")
+            await update.message.reply_text("Oops! Something went wrong. 😕 Please try again later.")
 
-        # Search using regex
-        regex_pattern = re.compile(re.escape(movie_name), re.IGNORECASE)
-        results = list(collection.find({"name": {"$regex": regex_pattern}}))
+    async def add_movie(self, update: Update, context: CallbackContext):
+        """Handle movie file uploads in the storage group."""
+        try:
+            if update.effective_chat.id != Config.STORAGE_GROUP_ID:
+                await update.message.reply_text("Please upload movies in the designated storage group. 🎬")
+                return
 
-        if results:
-            for result in results:
-                await update.message.reply_text(f"Found movie: {result['name']} 🎥")
-                await context.bot.send_document(chat_id=update.effective_chat.id, document=result['file_id'])
-        else:
-            await update.message.reply_text("Movie not found. 😔 Try a different search.")
-    except errors.PyMongoError as e:
-        logging.error(f"MongoDB error while searching for movie: {e}")
-        await update.message.reply_text("There was an error while searching. 🛑 Please try again later.")
-    except Exception as e:
-        logging.error(f"Error searching movie: {e}")
-        await update.message.reply_text("Oops! Something went wrong. 😕 Please try again later.")
+            if update.message.document:
+                movie_name = update.message.document.file_name
+                file_id = update.message.document.file_id
+                self.db_manager.add_movie(movie_name, file_id)
+                await update.message.reply_text(f"Added movie: {movie_name} 🎥")
+            else:
+                await update.message.reply_text("No file found. Please send a movie file. 📁")
+        except Exception as e:
+            logger.error(f"Error adding movie: {e}")
+            await update.message.reply_text("Oops! Something went wrong. 😕 Please try again later.")
 
-async def get_user_id(update: Update, context: CallbackContext):
-    """Return the user's ID."""
-    try:
-        if is_in_group(update.effective_chat.id, SEARCH_GROUP_ID):
-            user_id = update.effective_user.id
-            await update.message.reply_text(f"Your User ID: {user_id} 🆔")
-        else:
-            await update.message.reply_text("This command works only in the search group. 🔍")
-    except Exception as e:
-        logging.error(f"Error getting user ID: {e}")
-        await update.message.reply_text("Oops! Something went wrong. 😕 Please try again later.")
+    async def search_movie(self, update: Update, context: CallbackContext):
+        """Search for a movie in the database."""
+        try:
+            if update.effective_chat.id != Config.SEARCH_GROUP_ID:
+                await update.message.reply_text("Use this feature in the search group. 🔍")
+                return
 
-async def delete_messages_task(context: CallbackContext):
-    """Delete messages in the search group that are older than 24 hours."""
-    try:
-        now = datetime.datetime.utcnow()
-        to_delete = []
+            movie_name = update.message.text.strip()
+            if not movie_name:
+                await update.message.reply_text("Please enter a valid movie name. 🎬")
+                return
 
-        for message in search_group_messages.copy():
-            if (now - message["time"]).total_seconds() > 86400:  # 24 hours
-                try:
-                    await context.bot.delete_message(chat_id=message["chat_id"], message_id=message["message_id"])
-                    to_delete.append(message)
-                except Exception as e:
-                    logging.error(f"Failed to delete message {message['message_id']}: {e}")
+            results = self.db_manager.search_movies(movie_name)
 
-        for message in to_delete:
-            search_group_messages.remove(message)
-    except Exception as e:
-        logging.error(f"Error in delete_messages_task: {e}")
+            if results:
+                for result in results:
+                    await update.message.reply_text(f"Found movie: {result['name']} 🎥")
+                    await context.bot.send_document(chat_id=update.effective_chat.id, document=result['file_id'])
+            else:
+                await update.message.reply_text("Movie not found. 😔 Try a different search.")
+        except Exception as e:
+            logger.error(f"Error searching movie: {e}")
+            await update.message.reply_text("Oops! Something went wrong. 😕 Please try again later.")
 
-async def welcome_new_member(update: Update, context: CallbackContext):
-    """Send a welcome message when a new user joins the search group."""
-    try:
-        if is_in_group(update.effective_chat.id, SEARCH_GROUP_ID):
-            for member in update.message.new_chat_members:
-                welcome_message = (
-                    f"👋 Welcome {member.full_name}! 🎉\n\n"
-                    f"I'm Olive, your group assistant. 🤖\n"
-                    f"Feel free to ask for a movie by its name, and I'll try to find it for you. 🎥"
-                    f"Enjoy your stay! 😄"
-                )
-                await context.bot.send_message(chat_id=SEARCH_GROUP_ID, text=welcome_message)
-    except Exception as e:
-        logging.error(f"Error welcoming new member: {e}")
-        await update.message.reply_text("Sorry, I couldn't welcome the new member properly. 😞")
+    async def welcome_new_member(self, update: Update, context: CallbackContext):
+        """Send a welcome message when a new user joins the search group."""
+        try:
+            if update.effective_chat.id == Config.SEARCH_GROUP_ID:
+                for member in update.message.new_chat_members:
+                    welcome_message = (
+                        f"👋 Welcome {member.full_name}! 🎉\n\n"
+                        f"I'm Olive, your group assistant. 🤖\n"
+                        f"Feel free to ask for a movie by its name, and I'll try to find it for you. 🎥 "
+                        f"Enjoy your stay! 😄"
+                    )
+                    await context.bot.send_message(chat_id=Config.SEARCH_GROUP_ID, text=welcome_message)
+        except Exception as e:
+            logger.error(f"Error welcoming new member: {e}")
 
-async def handle_text_message(update: Update, context: CallbackContext):
-    """Handle general text messages."""
-    try:
-        # Track message for potential deletion
-        search_group_messages.append({
-            "chat_id": update.effective_chat.id,
-            "message_id": update.message.message_id,
-            "time": datetime.datetime.utcnow()
-        })
-        await search_movie(update, context)
-    except Exception as e:
-        logging.error(f"Error handling text message: {e}")
-        await update.message.reply_text("Sorry, something went wrong while processing your message. 😕")
+    async def delete_old_messages(self, context: CallbackContext):
+        """Delete messages in the search group older than 24 hours."""
+        try:
+            now = datetime.datetime.utcnow()
+            to_delete = []
 
-# Global error handling for unhandled exceptions
-async def error_handler(update: Update, context: CallbackContext):
-    """Handle uncaught errors globally."""
-    logging.error(f"Unhandled error: {context.error}")
-    if update:
-        await update.message.reply_text("Oops! Something went wrong. 😕 Please try again later.")
+            for message in search_group_messages.copy():
+                if (now - message["time"]).total_seconds() > 86400:  # 24 hours
+                    try:
+                        await context.bot.delete_message(chat_id=message["chat_id"], message_id=message["message_id"])
+                        to_delete.append(message)
+                    except Exception as e:
+                        logger.error(f"Failed to delete message {message['message_id']}: {e}")
 
-# Main application
+            for message in to_delete:
+                search_group_messages.remove(message)
+        except Exception as e:
+            logger.error(f"Error in delete_messages_task: {e}")
+
+    def setup_handlers(self):
+        """Set up bot handlers."""
+        self.application = ApplicationBuilder().token(self.token).build()
+
+        # Command Handlers
+        self.application.add_handler(CommandHandler("start", self.start_command))
+
+        # Message Handlers
+        self.application.add_handler(MessageHandler(filters.Document.ALL, self.add_movie))
+        self.application.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, self.welcome_new_member))
+        self.application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.search_movie))
+
+        # Job Queue for Message Deletion
+        self.application.job_queue.run_repeating(self.delete_old_messages, interval=3600, first=0)
+
+    async def start_webhook(self, app):
+        """Start webhook server for Render deployment."""
+        async def handle_webhook(request):
+            return web.Response(text="Bot is running")
+
+        app.router.add_get('/', handle_webhook)
+        return app
+
+    async def run(self):
+        """Run the bot with webhook support."""
+        self.setup_handlers()
+
+        # Create web app for port binding
+        app = web.Application()
+        await self.start_webhook(app)
+
+        # Start web server
+        runner = web.AppRunner(app)
+        await runner.setup()
+        site = web.TCPSite(runner, '0.0.0.0', Config.PORT)
+        await site.start()
+
+        logger.info(f"Webhook server started on port {Config.PORT}")
+
+        # Start bot polling
+        await self.application.run_polling()
+
 async def main():
-    """Start the bot."""
-    logging.info("Starting the application...")
-    application = ApplicationBuilder().token(TOKEN).build()
+    """Main entry point for the application."""
+    # Validate configuration
+    if not all([Config.TOKEN, Config.DB_URL, Config.SEARCH_GROUP_ID, Config.STORAGE_GROUP_ID]):
+        logger.error("Missing required environment variables")
+        return
 
-    # Command handlers
-    application.add_handler(CommandHandler("start", start))
-    application.add_handler(CommandHandler("id", get_user_id))
-
-    # Message handlers
-    application.add_handler(MessageHandler(filters.Document.ALL, add_movie))
-    application.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, welcome_new_member))
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text_message))
-
-    # Global error handler
-    application.add_error_handler(error_handler)
-
-    # Schedule periodic message deletion task
-    application.job_queue.run_repeating(delete_messages_task, interval=3600, first=0)
-
-    # Start the bot
-    logging.info("Running polling...")
-    await application.run_polling()
+    try:
+        # Initialize database and bot
+        db_manager = DatabaseManager(Config.DB_URL)
+        movie_bot = MovieBot(Config.TOKEN, db_manager)
+        
+        # Run the bot
+        await movie_bot.run()
+    except Exception as e:
+        logger.error(f"Critical startup error: {e}")
 
 if __name__ == "__main__":
     import sys
-
+    
     try:
-        # Check if an event loop is already running
-        loop = asyncio.get_event_loop()
-        if loop and loop.is_running():
-            # Nest asyncio to allow it to work in environments with an already running loop
-            nest_asyncio.apply()
-            asyncio.ensure_future(main())  # Schedule main() coroutine
-        else:
-            asyncio.run(main())  # Normal execution
+        asyncio.run(main())
     except (KeyboardInterrupt, SystemExit):
-        logging.info("Bot stopped.")
+        logger.info("Bot stopped.")
         sys.exit(0)
     except Exception as e:
-        logging.error(f"Critical error: {e}")
+        logger.error(f"Unhandled critical error: {e}")
         sys.exit(1)
