@@ -8,12 +8,15 @@ from telegram.ext import (
     ApplicationBuilder, CommandHandler, MessageHandler, CallbackContext, filters
 )
 import os
+import aiohttp
+from aiohttp import web
 
 # Configuration variables
 TOKEN = os.environ.get('TOKEN')
 DB_URL = os.environ.get('DB_URL')
 SEARCH_GROUP_ID = int(os.environ.get('SEARCH_GROUP_ID'))
 STORAGE_GROUP_ID = int(os.environ.get('STORAGE_GROUP_ID'))
+PORT = int(os.environ.get('PORT', 8080))  # Default to 8080 if not set
 
 # MongoDB client setup
 try:
@@ -37,7 +40,6 @@ search_group_messages = []
 def is_in_group(chat_id, group_id):
     return chat_id == group_id
 
-
 async def start(update: Update, context: CallbackContext):
     """Handle the /start command."""
     try:
@@ -56,7 +58,6 @@ async def start(update: Update, context: CallbackContext):
         logging.error(f"Error in /start command: {e}")
         await update.message.reply_text("Oops! Something went wrong. 😕 Please try again later.")
 
-
 async def add_movie(update: Update, context: CallbackContext):
     """Add a movie to the database when uploaded in the storage group."""
     try:
@@ -73,7 +74,6 @@ async def add_movie(update: Update, context: CallbackContext):
     except Exception as e:
         logging.error(f"Error in add_movie: {e}")
         await update.message.reply_text("An error occurred while adding the movie. 😕")
-
 
 async def search_movie(update: Update, context: CallbackContext):
     """Search for a movie in the database."""
@@ -107,7 +107,6 @@ async def search_movie(update: Update, context: CallbackContext):
         logging.error(f"Error searching movie: {e}")
         await update.message.reply_text("Oops! Something went wrong. 😕 Please try again later.")
 
-
 async def delete_old_messages(application: ApplicationBuilder):
     """Delete messages in the search group that are older than 24 hours."""
     while True:
@@ -130,20 +129,35 @@ async def delete_old_messages(application: ApplicationBuilder):
         except Exception as e:
             logging.error(f"Error in delete_old_messages task: {e}")
 
-
 async def welcome_new_member(update: Update, context: CallbackContext):
     """Send a welcome message when a new user joins the search group."""
     for member in update.message.new_chat_members:
         await context.bot.send_message(chat_id=SEARCH_GROUP_ID, text=f"Welcome {member.full_name}! 🎉 Ask for a movie name, and I'll help you find it. 🔍")
 
-
 async def handle_text_message(update: Update, context: CallbackContext):
     """Handle text messages in the search group."""
     await search_movie(update, context)
 
+# Add a simple web handler for health checks
+async def handle_webhook(request):
+    return web.Response(text="Bot is running")
+
+async def start_web_server():
+    """Start a simple web server to keep the application alive"""
+    app = web.Application()
+    app.router.add_get('/', handle_webhook)
+    runner = web.AppRunner(app)
+    await runner.setup()
+    site = web.TCPSite(runner, '0.0.0.0', PORT)
+    await site.start()
+    logging.info(f"Web server started on port {PORT}")
+    return runner
 
 async def main():
-    """Start the bot."""
+    """Start the bot"""
+    # Start web server first
+    web_runner = await start_web_server()
+
     application = ApplicationBuilder().token(TOKEN).build()
 
     # Command handlers
@@ -173,12 +187,16 @@ async def main():
         # Keep the event loop running
         await asyncio.Event().wait()
 
+    except Exception as e:
+        logging.error(f"Error in main function: {e}")
+    
     finally:
         # Graceful shutdown
         logging.info("Shutting down the bot...")
         await application.stop()
         await application.shutdown()
-        logging.info("Bot shut down successfully.")
+        await web_runner.cleanup()
+        logging.info("Bot and web server shut down successfully.")
 
 if __name__ == "__main__":
     try:
@@ -193,4 +211,3 @@ if __name__ == "__main__":
         else:
             logging.error(f"Unexpected RuntimeError: {e}")
             raise
-
