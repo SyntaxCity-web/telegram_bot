@@ -22,6 +22,7 @@ PORT = int(os.environ.get('PORT', 8080))  # Default to 8080 if not set
 
 # Global variables
 search_group_messages = []
+collection = None
 
 # Logging setup
 logging.basicConfig(
@@ -34,7 +35,7 @@ def connect_mongo():
     retries = 5
     while retries > 0:
         try:
-            client = MongoClient(DB_URL)
+            client = MongoClient(DB_URL, serverSelectionTimeoutMS=5000)  # Timeout to prevent hanging
             db = client['MoviesDB']
             collection = db['Movies']
             logging.info("MongoDB connection successful.")
@@ -46,7 +47,12 @@ def connect_mongo():
     logging.critical("Failed to connect to MongoDB after retries.")
     return None  # Or handle appropriately
 
-collection = connect_mongo()
+def get_mongo_collection():
+    """Ensure the MongoDB collection is available"""
+    global collection
+    if not collection:
+        collection = connect_mongo()
+    return collection
 
 # Helper function to check if a chat is the search group
 def is_in_group(chat_id, group_id):
@@ -99,6 +105,7 @@ async def add_movie(update: Update, context: CallbackContext):
         if file_info:
             movie_name = file_info.file_name
             file_id = file_info.file_id
+            collection = get_mongo_collection()
             collection.insert_one({"name": movie_name, "file_id": file_id})
             await context.bot.send_message(chat_id=STORAGE_GROUP_ID, text=f"Added movie: {movie_name}")
     except Exception as e:
@@ -158,6 +165,7 @@ async def delete_old_messages(application: ApplicationBuilder):
             await asyncio.sleep(3600)  # Check hourly
         except Exception as e:
             logging.error(f"Error in delete_old_messages task: {e}")
+            await asyncio.sleep(10)  # Add a small delay to prevent the loop from spinning too quickly after an error
 
 async def welcome_new_member(update: Update, context: CallbackContext):
     """Send a welcome message when a new user joins the search group."""
@@ -226,16 +234,7 @@ async def main():
         await application.stop()
         await application.shutdown()
         await web_runner.cleanup()
-        logging.info("Bot and web server shut down successfully.")
+        logging.info("Bot stopped.")
 
 if __name__ == "__main__":
-    try:
-        # Attempt to start the main function with asyncio.run()
-        asyncio.run(main())
-    except RuntimeError as e:
-        if "This event loop is already running" in str(e):
-            logging.warning("Detected running event loop, switching to asyncio.create_task()")
-            loop = asyncio.get_event_loop()
-            loop.create_task(main())
-        else:
-            logging.error(f"Unexpected error: {e}")
+    asyncio.run(main())
