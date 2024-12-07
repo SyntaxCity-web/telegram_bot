@@ -139,7 +139,7 @@ async def welcome_new_member(update: Update, context: CallbackContext):
                     f"👋 Welcome {member.full_name}! 🎉\n\n"
                     f"I'm Olive, your group assistant. 🤖\n"
                     f"Feel free to ask for a movie by its name, and I'll try to find it for you. 🎥"
-                    f"Use /help if you need assistance. Enjoy your stay! 😄"
+                    f"Enjoy your stay! 😄"
                 )
                 await context.bot.send_message(chat_id=SEARCH_GROUP_ID, text=welcome_message)
     except Exception as e:
