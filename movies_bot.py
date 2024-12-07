@@ -9,7 +9,8 @@ from telegram.ext import (
     CommandHandler,
     MessageHandler,
     filters,
-    CallbackContext
+    CallbackContext,
+    InlineQueryHandler,
 )
 from pymongo import MongoClient, errors
 import os
@@ -230,8 +231,5 @@ if __name__ == "__main__":
         else:
             asyncio.run(main())  # Normal execution
     except (KeyboardInterrupt, SystemExit):
-        logging.info("Bot stopped.")
+        logging.info("Bot terminated.")
         sys.exit(0)
-    except Exception as e:
-        logging.error(f"Critical error: {e}")
-        sys.exit(1)
