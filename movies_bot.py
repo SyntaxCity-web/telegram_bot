@@ -76,7 +76,7 @@ async def add_movie(update: Update, context: CallbackContext):
         await update.message.reply_text("An error occurred while adding the movie. 😕")
 
 async def search_movie(update: Update, context: CallbackContext):
-    """Search for a movie in the database with improved formatting."""
+    """Search for a movie in the database."""
     try:
         if not is_in_group(update.effective_chat.id, SEARCH_GROUP_ID):
             await update.message.reply_text("Use this feature in the search group. 🔍")
@@ -93,38 +93,10 @@ async def search_movie(update: Update, context: CallbackContext):
         results = list(collection.find({"name": {"$regex": regex_pattern}}))
 
         if results:
-            # Pagination setup
-            results_per_page = 5
-            page = 0
-            num_pages = len(results) // results_per_page + (1 if len(results) % results_per_page != 0 else 0)
-
-            def format_results(page):
-                start = page * results_per_page
-                end = start + results_per_page
-                page_results = results[start:end]
-
-                buttons = []
-                for result in page_results:
-                    file_info = f"{result['name']} ({result['file_size']})\n" \
-                                f"Quality: {result['quality']}\n" \
-                                f"Language: {result['language']}"
-                    buttons.append([
-                        InlineKeyboardButton(f"📂 {result['name']}", url=f"https://t.me/{result['file_id']}")
-                    ])
-
-                return buttons
-
-            # Show results with pagination
-            buttons = format_results(page)
-            keyboard = [
-                *buttons,
-                [
-                    InlineKeyboardButton("Next ▶️", callback_data=f"next:{page + 1}" if page + 1 < num_pages else None),
-                    InlineKeyboardButton("Previous ◀️", callback_data=f"prev:{page - 1}" if page > 0 else None),
-                ]
-            ]
-            reply_markup = InlineKeyboardMarkup(keyboard)
-            await update.message.reply_text(f"Found {len(results)} Files for {movie_name}", reply_markup=reply_markup)
+            for result in results:
+                msg = await update.message.reply_text(f"Found movie: {result['name']} 🎥")
+                await context.bot.send_document(chat_id=update.effective_chat.id, document=result['file_id'])
+                search_group_messages.append({"chat_id": msg.chat_id, "message_id": msg.message_id, "time": datetime.datetime.utcnow()})
         else:
             msg = await update.message.reply_text("Movie not found. 😔 Try a different search.")
             search_group_messages.append({"chat_id": msg.chat_id, "message_id": msg.message_id, "time": datetime.datetime.utcnow()})
@@ -134,16 +106,6 @@ async def search_movie(update: Update, context: CallbackContext):
     except Exception as e:
         logging.error(f"Error searching movie: {e}")
         await update.message.reply_text("Oops! Something went wrong. 😕 Please try again later.")
-
-
-async def page_callback(update: Update, context: CallbackContext):
-    """Handle the pagination for next and previous buttons."""
-    callback_data = update.callback_query.data
-    if callback_data.startswith("next:") or callback_data.startswith("prev:"):
-        page = int(callback_data.split(":")[1])
-        await search_movie(update, context)  # You can also send page-specific results here
-
-
 
 async def delete_old_messages(application: ApplicationBuilder):
     """Delete messages in the search group that are older than 24 hours."""
