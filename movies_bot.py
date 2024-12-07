@@ -196,7 +196,6 @@ async def main():
         # Start the event loop monitor
         asyncio.create_task(monitor_event_loop())
 
-        # Start the bot
         application = ApplicationBuilder().token(TOKEN).build()
 
         # Command handlers
@@ -224,22 +223,26 @@ async def main():
 
         # Keep the event loop running
         await asyncio.Event().wait()
-
     except Exception as e:
         logging.error(f"Error in main function: {e}")
-    
     finally:
+        # Graceful shutdown
         logging.info("Shutting down the bot...")
         await application.stop()
         await application.shutdown()
         await web_runner.cleanup()
-        logging.info("Bot shut down successfully.")
+        logging.info("Bot and web server shut down successfully.")
 
 if __name__ == "__main__":
     try:
-        # Start the bot
+        # Attempt to start the main function with asyncio.run()
         asyncio.run(main())
-    except KeyboardInterrupt:
-        logging.info("Bot stopped manually.")
-    except Exception as e:
-        logging.error(f"Critical error: {e}")
+    except RuntimeError as e:
+        if "This event loop is already running" in str(e):
+            logging.warning("Detected running event loop, switching to asyncio.create_task().")
+            loop = asyncio.get_event_loop()
+            loop.create_task(main())  # Create a task for the main coroutine
+            loop.run_forever()  # Keep the loop running
+        else:
+            logging.error(f"Unexpected RuntimeError: {e}")
+            raise
