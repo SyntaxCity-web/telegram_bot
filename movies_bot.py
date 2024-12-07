@@ -2,6 +2,7 @@ import logging
 import re
 import datetime
 import asyncio
+import time
 from pymongo import MongoClient, errors
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
@@ -10,6 +11,7 @@ from telegram.ext import (
 import os
 import aiohttp
 from aiohttp import web
+import sys
 
 # Configuration variables
 TOKEN = os.environ.get('TOKEN')
@@ -18,14 +20,8 @@ SEARCH_GROUP_ID = int(os.environ.get('SEARCH_GROUP_ID'))
 STORAGE_GROUP_ID = int(os.environ.get('STORAGE_GROUP_ID'))
 PORT = int(os.environ.get('PORT', 8080))  # Default to 8080 if not set
 
-# MongoDB client setup
-try:
-    client = MongoClient(DB_URL)
-    db = client['MoviesDB']
-    collection = db['Movies']
-except errors.PyMongoError as e:
-    logging.error(f"Error connecting to MongoDB: {e}")
-    exit(1)
+# Global variables
+search_group_messages = []
 
 # Logging setup
 logging.basicConfig(
@@ -33,12 +29,46 @@ logging.basicConfig(
     level=logging.INFO
 )
 
-# Track messages for scheduled deletion
-search_group_messages = []
+# MongoDB client setup with retries
+def connect_mongo():
+    retries = 5
+    while retries > 0:
+        try:
+            client = MongoClient(DB_URL)
+            db = client['MoviesDB']
+            collection = db['Movies']
+            logging.info("MongoDB connection successful.")
+            return collection
+        except errors.PyMongoError as e:
+            logging.error(f"MongoDB connection failed. Retrying... {e}")
+            retries -= 1
+            time.sleep(5)  # Wait before retrying
+    logging.critical("Failed to connect to MongoDB after retries.")
+    return None  # Or handle appropriately
+
+collection = connect_mongo()
 
 # Helper function to check if a chat is the search group
 def is_in_group(chat_id, group_id):
     return chat_id == group_id
+
+# Global exception handler
+def log_exception(exc_type, exc_value, exc_tb):
+    """Log uncaught exceptions."""
+    logging.error("Uncaught exception", exc_info=(exc_type, exc_value, exc_tb))
+
+sys.excepthook = log_exception
+
+# Helper function to handle webhook (health check)
+async def handle_webhook(request):
+    logging.info("Health check received.")
+    return web.Response(text="Bot is running")
+
+# Helper function to monitor the event loop
+async def monitor_event_loop():
+    while True:
+        logging.info("Bot is still running...")
+        await asyncio.sleep(3600)  # Log every hour
 
 async def start(update: Update, context: CallbackContext):
     """Handle the /start command."""
@@ -138,10 +168,7 @@ async def handle_text_message(update: Update, context: CallbackContext):
     """Handle text messages in the search group."""
     await search_movie(update, context)
 
-# Add a simple web handler for health checks
-async def handle_webhook(request):
-    return web.Response(text="Bot is running")
-
+# Start the web server
 async def start_web_server():
     """Start a simple web server to keep the application alive"""
     app = web.Application()
@@ -155,7 +182,7 @@ async def start_web_server():
 
 async def main():
     """Start the bot"""
-    # Start web server first
+    # Start the web server first
     web_runner = await start_web_server()
 
     application = ApplicationBuilder().token(TOKEN).build()
@@ -170,6 +197,9 @@ async def main():
 
     # Start the background task for deleting old messages
     asyncio.create_task(delete_old_messages(application))
+
+    # Monitor the event loop
+    asyncio.create_task(monitor_event_loop())
 
     try:
         # Initialize the application
@@ -204,10 +234,8 @@ if __name__ == "__main__":
         asyncio.run(main())
     except RuntimeError as e:
         if "This event loop is already running" in str(e):
-            logging.warning("Detected running event loop, switching to asyncio.create_task().")
+            logging.warning("Detected running event loop, switching to asyncio.create_task()")
             loop = asyncio.get_event_loop()
-            loop.create_task(main())  # Create a task for the main coroutine
-            loop.run_forever()  # Keep the loop running
+            loop.create_task(main())
         else:
-            logging.error(f"Unexpected RuntimeError: {e}")
-            raise
+            logging.error(f"Unexpected error: {e}")
