@@ -69,8 +69,12 @@ async def handle_webhook(request):
 # Helper function to monitor the event loop
 async def monitor_event_loop():
     while True:
-        logging.info("Bot is still running...")
-        await asyncio.sleep(3600)  # Log every hour
+        try:
+            logging.info("Bot is still running...")
+            await asyncio.sleep(3600)  # Log every hour
+        except Exception as e:
+            logging.error(f"Error in monitor_event_loop: {e}")
+            await asyncio.sleep(10)  # Retry after 10 seconds in case of failure
 
 async def start(update: Update, context: CallbackContext):
     """Handle the /start command."""
@@ -160,6 +164,7 @@ async def delete_old_messages(application: ApplicationBuilder):
             await asyncio.sleep(3600)  # Check hourly
         except Exception as e:
             logging.error(f"Error in delete_old_messages task: {e}")
+            await asyncio.sleep(10)  # Retry after 10 seconds in case of failure
 
 async def welcome_new_member(update: Update, context: CallbackContext):
     """Send a welcome message when a new user joins the search group."""
@@ -184,26 +189,27 @@ async def start_web_server():
 
 async def main():
     """Start the bot"""
-    # Start web server first
-    web_runner = await start_web_server()
-
-    # Start the event loop monitor
-    asyncio.create_task(monitor_event_loop())
-
-    application = ApplicationBuilder().token(TOKEN).build()
-
-    # Command handlers
-    application.add_handler(CommandHandler("start", start))
-
-    # Message handlers
-    application.add_handler(MessageHandler(filters.Document.ALL, add_movie))
-    application.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, welcome_new_member))
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text_message))
-
-    # Start the background task for deleting old messages
-    asyncio.create_task(delete_old_messages(application))
-
     try:
+        # Start the web server
+        web_runner = await start_web_server()
+
+        # Start the event loop monitor
+        asyncio.create_task(monitor_event_loop())
+
+        # Start the bot
+        application = ApplicationBuilder().token(TOKEN).build()
+
+        # Command handlers
+        application.add_handler(CommandHandler("start", start))
+
+        # Message handlers
+        application.add_handler(MessageHandler(filters.Document.ALL, add_movie))
+        application.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, welcome_new_member))
+        application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text_message))
+
+        # Start the background task for deleting old messages
+        asyncio.create_task(delete_old_messages(application))
+
         # Initialize the application
         await application.initialize()
         logging.info("Application initialized.")
@@ -223,23 +229,17 @@ async def main():
         logging.error(f"Error in main function: {e}")
     
     finally:
-        # Graceful shutdown
         logging.info("Shutting down the bot...")
         await application.stop()
         await application.shutdown()
         await web_runner.cleanup()
-        logging.info("Bot and web server shut down successfully.")
+        logging.info("Bot shut down successfully.")
 
 if __name__ == "__main__":
     try:
-        # Attempt to start the main function with asyncio.run()
+        # Start the bot
         asyncio.run(main())
-    except RuntimeError as e:
-        if "This event loop is already running" in str(e):
-            logging.warning("Detected running event loop, switching to asyncio.create_task().")
-            loop = asyncio.get_event_loop()
-            loop.create_task(main())  # Create a task for the main coroutine
-            loop.run_forever()  # Keep the loop running
-        else:
-            logging.error(f"Unexpected RuntimeError: {e}")
-            raise
+    except KeyboardInterrupt:
+        logging.info("Bot stopped manually.")
+    except Exception as e:
+        logging.error(f"Critical error: {e}")
