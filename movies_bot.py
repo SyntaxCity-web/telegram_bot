@@ -138,24 +138,24 @@ async def handle_text_message(update: Update, context: CallbackContext):
     await search_movie(update, context)
 
 
-
-from telegram.ext import Application
-import logging
-
-# Enable logging to see logs in the console
-logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
-logger = logging.getLogger(__name__)
-
 async def main():
-    # Your bot's token
-    application = Application.builder().token("YOUR_BOT_TOKEN").build()
+    """Start the bot."""
+    application = ApplicationBuilder().token(TOKEN).build()
 
-    # Add handlers, etc. to your application here
+    # Command handlers
+    application.add_handler(CommandHandler("start", start))
 
-    # Run the bot using polling (not a web server)
+    # Message handlers
+    application.add_handler(MessageHandler(filters.Document.ALL, add_movie))
+    application.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, welcome_new_member))
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text_message))
+
+    # Start the background task for deleting old messages
+    asyncio.create_task(delete_old_messages())
+
+    # Start the bot
     await application.run_polling()
 
-if __name__ == "__main__":
-    import asyncio
-    asyncio.run(main())  # Correct way to run your Telegram bot
 
+if __name__ == "__main__":
+    asyncio.run(main())
