@@ -157,9 +157,15 @@ async def main():
     # Start the background task for deleting old messages
     asyncio.create_task(delete_old_messages(application))
 
-    # Start the bot
-    await application.run_polling()
+    # Check if there's an existing event loop
+    loop = asyncio.get_event_loop()
+    if loop.is_running():
+        # If an event loop is already running, use it to run the bot
+        await application.run_polling()
+    else:
+        # If no event loop is running, use asyncio.run() as usual
+        await application.run_polling()
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    asyncio.run(main())  # this will run only when there is no event loop running
