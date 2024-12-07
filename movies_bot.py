@@ -22,7 +22,6 @@ PORT = int(os.environ.get('PORT', 8080))  # Default to 8080 if not set
 
 # Global variables
 search_group_messages = []
-collection = None
 
 # Logging setup
 logging.basicConfig(
@@ -35,7 +34,7 @@ def connect_mongo():
     retries = 5
     while retries > 0:
         try:
-            client = MongoClient(DB_URL, serverSelectionTimeoutMS=5000)  # Timeout to prevent hanging
+            client = MongoClient(DB_URL)
             db = client['MoviesDB']
             collection = db['Movies']
             logging.info("MongoDB connection successful.")
@@ -47,12 +46,7 @@ def connect_mongo():
     logging.critical("Failed to connect to MongoDB after retries.")
     return None  # Or handle appropriately
 
-def get_mongo_collection():
-    """Ensure the MongoDB collection is available"""
-    global collection
-    if not collection:
-        collection = connect_mongo()
-    return collection
+collection = connect_mongo()
 
 # Helper function to check if a chat is the search group
 def is_in_group(chat_id, group_id):
@@ -105,7 +99,6 @@ async def add_movie(update: Update, context: CallbackContext):
         if file_info:
             movie_name = file_info.file_name
             file_id = file_info.file_id
-            collection = get_mongo_collection()
             collection.insert_one({"name": movie_name, "file_id": file_id})
             await context.bot.send_message(chat_id=STORAGE_GROUP_ID, text=f"Added movie: {movie_name}")
     except Exception as e:
@@ -125,16 +118,9 @@ async def search_movie(update: Update, context: CallbackContext):
             search_group_messages.append({"chat_id": msg.chat_id, "message_id": msg.message_id, "time": datetime.datetime.utcnow()})
             return
 
-        # Check if the MongoDB collection is valid
-        if not collection:
-            await update.message.reply_text("Database connection is unavailable. 🛑 Please try again later.")
-            return
-
         # Search using regex
         regex_pattern = re.compile(re.escape(movie_name), re.IGNORECASE)
-        
-        # Ensure that find() returns a list, not None
-        results = list(collection.find({"name": {"$regex": regex_pattern}}))  # .find() should return an empty list if no results
+        results = list(collection.find({"name": {"$regex": regex_pattern}}))
 
         if results:
             for result in results:
@@ -150,7 +136,6 @@ async def search_movie(update: Update, context: CallbackContext):
     except Exception as e:
         logging.error(f"Error searching movie: {e}")
         await update.message.reply_text("Oops! Something went wrong. 😕 Please try again later.")
-
 
 async def delete_old_messages(application: ApplicationBuilder):
     """Delete messages in the search group that are older than 24 hours."""
@@ -173,7 +158,6 @@ async def delete_old_messages(application: ApplicationBuilder):
             await asyncio.sleep(3600)  # Check hourly
         except Exception as e:
             logging.error(f"Error in delete_old_messages task: {e}")
-            await asyncio.sleep(10)  # Add a small delay to prevent the loop from spinning too quickly after an error
 
 async def welcome_new_member(update: Update, context: CallbackContext):
     """Send a welcome message when a new user joins the search group."""
@@ -242,7 +226,16 @@ async def main():
         await application.stop()
         await application.shutdown()
         await web_runner.cleanup()
-        logging.info("Bot stopped.")
+        logging.info("Bot and web server shut down successfully.")
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    try:
+        # Attempt to start the main function with asyncio.run()
+        asyncio.run(main())
+    except RuntimeError as e:
+        if "This event loop is already running" in str(e):
+            logging.warning("Detected running event loop, switching to asyncio.create_task()")
+            loop = asyncio.get_event_loop()
+            loop.create_task(main())
+        else:
+            logging.error(f"Unexpected error: {e}")
