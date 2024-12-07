@@ -1,10 +1,10 @@
 import logging
+import os
 import re
-import datetime
+import sys
 import asyncio
 import nest_asyncio
-import os
-import sys
+import datetime
 from typing import Dict, List, Optional
 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
@@ -17,6 +17,10 @@ from telegram.ext import (
 )
 from pymongo import MongoClient, errors
 from aiohttp import web
+from dotenv import load_dotenv
+
+# Load environment variables from a .env file
+load_dotenv()
 
 # Patch asyncio to allow nested event loops (if needed)
 nest_asyncio.apply()
@@ -28,9 +32,11 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+
 class ConfigurationError(Exception):
     """Custom exception for configuration errors."""
     pass
+
 
 class Config:
     """Configuration management with extensive validation."""
@@ -49,9 +55,8 @@ class Config:
         
         if value is None:
             if required:
-                error_msg = f"Missing required environment variable: {var_name}"
-                logger.error(error_msg)
-                raise ConfigurationError(error_msg)
+                logger.error(f"Environment variable {var_name} is missing. Ensure it is set before running the bot.")
+                raise ConfigurationError(f"Missing required environment variable: {var_name}")
             return default
         
         return value.strip()
@@ -84,11 +89,12 @@ class Config:
             cls.ADMIN_ID = int(cls.get_env_variable('ADMIN_ID', required=False, default='0'))
             cls.PORT = int(cls.get_env_variable('PORT', required=False, default='8080'))
             
-            logger.info("Configuration validated successfully")
+            logger.info("Configuration validated successfully.")
         
         except (ConfigurationError, ValueError) as e:
             logger.error(f"Configuration validation failed: {e}")
             raise
+
 
 # Database Setup
 class DatabaseManager:
@@ -118,8 +124,10 @@ class DatabaseManager:
             logger.error(f"Error searching movies: {e}")
             raise
 
+
 # Message Tracking
 search_group_messages: List[Dict] = []
+
 
 class MovieBot:
     def __init__(self, token: str, db_manager: DatabaseManager):
@@ -245,50 +253,26 @@ class MovieBot:
         return app
 
     async def run(self):
-        """Run the bot with webhook support."""
-        self.setup_handlers()
+        """Run the bot."""
+        try:
+            self.setup_handlers()
+            await self.application.run_polling()
+        except Exception as e:
+            logger.error(f"Error starting bot: {e}")
+            sys.exit(1)
 
-        # Create web app for port binding
-        app = web.Application()
-        await self.start_webhook(app)
-
-        # Start web server
-        runner = web.AppRunner(app)
-        await runner.setup()
-        site = web.TCPSite(runner, '0.0.0.0', Config.PORT)
-        await site.start()
-
-        logger.info(f"Webhook server started on port {Config.PORT}")
-
-        # Start bot polling
-        await self.application.run_polling()
 
 async def main():
-    """Main entry point for the application."""
+    """Main entry point for the bot."""
     try:
-        # Validate configuration first
         Config.validate_config()
-
-        # Initialize database and bot
         db_manager = DatabaseManager(Config.DB_URL)
-        movie_bot = MovieBot(Config.TOKEN, db_manager)
-        
-        # Run the bot
-        await movie_bot.run()
-    
-    except ConfigurationError as config_error:
-        logger.error(f"Configuration Error: {config_error}")
+        bot = MovieBot(token=Config.TOKEN, db_manager=db_manager)
+        await bot.run()
+    except ConfigurationError as e:
+        logger.error(f"Configuration Error: {e}")
         sys.exit(1)
-    except Exception as e:
-        logger.error(f"Critical startup error: {e}")
-        sys.exit(1)
+
 
 if __name__ == "__main__":
-    try:
-        asyncio.run(main())
-    except (KeyboardInterrupt, SystemExit):
-        logger.info("Bot stopped.")
-        sys.exit(0)
-    except Exception as e:
-        logger.error(f"Unhandled critical error: {e}")
-        sys.exit(1)
+    asyncio.run(main())
