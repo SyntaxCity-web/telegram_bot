@@ -2,49 +2,49 @@ import logging
 import re
 import datetime
 import asyncio
-import os
+import time
 from pymongo import MongoClient, errors
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     ApplicationBuilder, CommandHandler, MessageHandler, CallbackContext, filters
 )
+import os
 import aiohttp
 from aiohttp import web
-import psutil
+import sys
 
 # Configuration variables
-TOKEN = os.getenv('TOKEN')
-DB_URL = os.getenv('DB_URL')
-SEARCH_GROUP_ID = int(os.getenv('SEARCH_GROUP_ID', 0))
-STORAGE_GROUP_ID = int(os.getenv('STORAGE_GROUP_ID', 0))
-PORT = int(os.getenv('PORT', 8080))  # Default to 8080 if not set
+TOKEN = os.environ.get('TOKEN')
+DB_URL = os.environ.get('DB_URL')
+SEARCH_GROUP_ID = int(os.environ.get('SEARCH_GROUP_ID'))
+STORAGE_GROUP_ID = int(os.environ.get('STORAGE_GROUP_ID'))
+PORT = int(os.environ.get('PORT', 8080))  # Default to 8080 if not set
+
+# Global variables
+search_group_messages = []
 
 # Logging setup
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    level=logging.DEBUG  # Switch to DEBUG for detailed logs
+    level=logging.INFO
 )
-
-# Global variables
-search_group_messages = []
 
 # MongoDB client setup with retries
 def connect_mongo():
     retries = 5
     while retries > 0:
         try:
-            client = MongoClient(DB_URL, serverSelectionTimeoutMS=5000)
+            client = MongoClient(DB_URL)
             db = client['MoviesDB']
             collection = db['Movies']
-            client.server_info()  # Test connection
             logging.info("MongoDB connection successful.")
             return collection
         except errors.PyMongoError as e:
             logging.error(f"MongoDB connection failed. Retrying... {e}")
             retries -= 1
-            asyncio.sleep(5)
+            time.sleep(5)  # Wait before retrying
     logging.critical("Failed to connect to MongoDB after retries.")
-    return None
+    return None  # Or handle appropriately
 
 collection = connect_mongo()
 
@@ -52,43 +52,33 @@ collection = connect_mongo()
 def is_in_group(chat_id, group_id):
     return chat_id == group_id
 
-# Health check endpoint
-async def handle_webhook(request):
-    try:
-        client.server_info()  # Test MongoDB connection
-        return web.Response(text="Bot and MongoDB are running.")
-    except errors.PyMongoError as e:
-        logging.error(f"MongoDB health check failed: {e}")
-        return web.Response(text="Bot is running, but MongoDB is down.", status=500)
+# Global exception handler
+def log_exception(exc_type, exc_value, exc_tb):
+    """Log uncaught exceptions."""
+    logging.error("Uncaught exception", exc_info=(exc_type, exc_value, exc_tb))
 
-# Background task to monitor event loop health
+sys.excepthook = log_exception
+
+# Helper function to handle webhook (health check)
+async def handle_webhook(request):
+    logging.info("Health check received.")
+    return web.Response(text="Bot is running")
+
+# Helper function to monitor the event loop
 async def monitor_event_loop():
     while True:
-        try:
-            logging.info("Bot is active and running.")
-            await asyncio.sleep(3600)  # Log every hour
-        except Exception as e:
-            logging.error(f"Error in event loop monitor: {e}")
-            await asyncio.sleep(10)  # Retry after failure
+        logging.info("Bot is still running...")
+        await asyncio.sleep(3600)  # Log every hour
 
-# Background task to monitor resource usage
-async def monitor_resources():
-    while True:
-        try:
-            process = psutil.Process()
-            memory = process.memory_info().rss / 1024 ** 2  # Memory in MB
-            cpu = process.cpu_percent(interval=1)
-            logging.debug(f"Resource Usage: Memory = {memory:.2f} MB, CPU = {cpu:.2f}%")
-            await asyncio.sleep(600)  # Log every 10 minutes
-        except Exception as e:
-            logging.error(f"Error monitoring resources: {e}")
-
-# Command handler: /start
 async def start(update: Update, context: CallbackContext):
+    """Handle the /start command."""
     try:
         user_name = update.effective_user.full_name or "there"
-        keyboard = [[InlineKeyboardButton("Add me to your chat! 🤖", url="https://t.me/+ERz0bGWEHHBmNTU9")]]
+        keyboard = [[
+            InlineKeyboardButton("Add me to your chat! 🤖", url="https://t.me/+ERz0bGWEHHBmNTU9")
+        ]]
         reply_markup = InlineKeyboardMarkup(keyboard)
+
         welcome_message = (
             f"Hi {user_name}! 👋 I'm Olive, your group assistant. 🎉\n"
             "Use me to search for movies, or upload a movie to the storage group! 🎥"
@@ -98,8 +88,8 @@ async def start(update: Update, context: CallbackContext):
         logging.error(f"Error in /start command: {e}")
         await update.message.reply_text("Oops! Something went wrong. 😕 Please try again later.")
 
-# Command handler: Add movie
 async def add_movie(update: Update, context: CallbackContext):
+    """Add a movie to the database when uploaded in the storage group."""
     try:
         if update.effective_chat.id != STORAGE_GROUP_ID:
             await update.message.reply_text("You can only upload movies in the designated storage group. 🎥")
@@ -107,7 +97,7 @@ async def add_movie(update: Update, context: CallbackContext):
 
         file_info = update.message.document
         if file_info:
-            movie_name = file_info.file_name.strip()
+            movie_name = file_info.file_name
             file_id = file_info.file_id
             collection.insert_one({"name": movie_name, "file_id": file_id})
             await context.bot.send_message(chat_id=STORAGE_GROUP_ID, text=f"Added movie: {movie_name}")
@@ -115,8 +105,8 @@ async def add_movie(update: Update, context: CallbackContext):
         logging.error(f"Error in add_movie: {e}")
         await update.message.reply_text("An error occurred while adding the movie. 😕")
 
-# Command handler: Search movie
 async def search_movie(update: Update, context: CallbackContext):
+    """Search for a movie in the database."""
     try:
         if not is_in_group(update.effective_chat.id, SEARCH_GROUP_ID):
             await update.message.reply_text("Use this feature in the search group. 🔍")
@@ -128,6 +118,7 @@ async def search_movie(update: Update, context: CallbackContext):
             search_group_messages.append({"chat_id": msg.chat_id, "message_id": msg.message_id, "time": datetime.datetime.utcnow()})
             return
 
+        # Search using regex
         regex_pattern = re.compile(re.escape(movie_name), re.IGNORECASE)
         results = list(collection.find({"name": {"$regex": regex_pattern}}))
 
@@ -139,30 +130,47 @@ async def search_movie(update: Update, context: CallbackContext):
         else:
             msg = await update.message.reply_text("Movie not found. 😔 Try a different search.")
             search_group_messages.append({"chat_id": msg.chat_id, "message_id": msg.message_id, "time": datetime.datetime.utcnow()})
+    except errors.PyMongoError as e:
+        logging.error(f"MongoDB error while searching for movie: {e}")
+        await update.message.reply_text("There was an error while searching. 🛑 Please try again later.")
     except Exception as e:
         logging.error(f"Error searching movie: {e}")
         await update.message.reply_text("Oops! Something went wrong. 😕 Please try again later.")
 
-# Background task to delete old messages
-async def delete_old_messages(application):
+async def delete_old_messages(application: ApplicationBuilder):
+    """Delete messages in the search group that are older than 24 hours."""
     while True:
         try:
             now = datetime.datetime.utcnow()
-            to_delete = [
-                msg for msg in search_group_messages if (now - msg["time"]).total_seconds() > 86400
-            ]
-            for msg in to_delete:
-                try:
-                    await application.bot.delete_message(chat_id=msg["chat_id"], message_id=msg["message_id"])
-                    search_group_messages.remove(msg)
-                except Exception as e:
-                    logging.error(f"Failed to delete message {msg['message_id']}: {e}")
-            await asyncio.sleep(3600)
-        except Exception as e:
-            logging.error(f"Error in delete_old_messages: {e}")
+            to_delete = []
 
-# Web server
+            for message in search_group_messages:
+                if (now - message["time"]).total_seconds() > 86400:  # 24 hours
+                    try:
+                        await application.bot.delete_message(chat_id=message["chat_id"], message_id=message["message_id"])
+                        to_delete.append(message)
+                    except Exception as e:
+                        logging.error(f"Failed to delete message {message['message_id']}: {e}")
+
+            for message in to_delete:
+                search_group_messages.remove(message)
+
+            await asyncio.sleep(3600)  # Check hourly
+        except Exception as e:
+            logging.error(f"Error in delete_old_messages task: {e}")
+
+async def welcome_new_member(update: Update, context: CallbackContext):
+    """Send a welcome message when a new user joins the search group."""
+    for member in update.message.new_chat_members:
+        await context.bot.send_message(chat_id=SEARCH_GROUP_ID, text=f"Welcome {member.full_name}! 🎉 Ask for a movie name, and I'll help you find it. 🔍")
+
+async def handle_text_message(update: Update, context: CallbackContext):
+    """Handle text messages in the search group."""
+    await search_movie(update, context)
+
+# Start the web server
 async def start_web_server():
+    """Start a simple web server to keep the application alive"""
     app = web.Application()
     app.router.add_get('/', handle_webhook)
     runner = web.AppRunner(app)
@@ -172,33 +180,62 @@ async def start_web_server():
     logging.info(f"Web server started on port {PORT}")
     return runner
 
-# Main function
 async def main():
+    """Start the bot"""
+    # Start the web server first
+    web_runner = await start_web_server()
+
+    application = ApplicationBuilder().token(TOKEN).build()
+
+    # Command handlers
+    application.add_handler(CommandHandler("start", start))
+
+    # Message handlers
+    application.add_handler(MessageHandler(filters.Document.ALL, add_movie))
+    application.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, welcome_new_member))
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text_message))
+
+    # Start the background task for deleting old messages
+    asyncio.create_task(delete_old_messages(application))
+
+    # Monitor the event loop
+    asyncio.create_task(monitor_event_loop())
+
     try:
-        web_runner = await start_web_server()
-        asyncio.create_task(monitor_event_loop())
-        asyncio.create_task(monitor_resources())
-
-        application = ApplicationBuilder().token(TOKEN).build()
-        application.add_handler(CommandHandler("start", start))
-        application.add_handler(MessageHandler(filters.Document.ALL, add_movie))
-        application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, search_movie))
-
-        asyncio.create_task(delete_old_messages(application))
-
+        # Initialize the application
         await application.initialize()
-        await application.start()
-        await application.updater.start_polling()
+        logging.info("Application initialized.")
 
-        logging.info("Bot is running.")
+        # Start the bot
+        await application.start()
+        logging.info("Bot started.")
+
+        # Start polling for updates
+        await application.updater.start_polling()
+        logging.info("Polling for updates started.")
+
+        # Keep the event loop running
         await asyncio.Event().wait()
+
     except Exception as e:
         logging.error(f"Error in main function: {e}")
+    
     finally:
-        logging.info("Shutting down...")
+        # Graceful shutdown
+        logging.info("Shutting down the bot...")
         await application.stop()
         await application.shutdown()
         await web_runner.cleanup()
+        logging.info("Bot and web server shut down successfully.")
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    try:
+        # Attempt to start the main function with asyncio.run()
+        asyncio.run(main())
+    except RuntimeError as e:
+        if "This event loop is already running" in str(e):
+            logging.warning("Detected running event loop, switching to asyncio.create_task()")
+            loop = asyncio.get_event_loop()
+            loop.create_task(main())
+        else:
+            logging.error(f"Unexpected error: {e}")
