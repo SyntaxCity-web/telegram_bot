@@ -163,13 +163,13 @@ async def main():
 
 if __name__ == "__main__":
     try:
-        # Check if there is already an active event loop
+        # Directly call the application within the event loop without using asyncio.run()
+        asyncio.run(main())  # This will avoid conflicts with an already running loop
+    except RuntimeError as e:
+        logging.error(f"Runtime error: {e}")
+        # Try using an already running event loop in environments where asyncio.run() fails
         loop = asyncio.get_event_loop()
         if loop.is_running():
-            # If the event loop is already running, run the application within it
             loop.create_task(main())
         else:
-            # If no event loop is running, use asyncio.run() to start the bot
-            asyncio.run(main())
-    except Exception as e:
-        logging.error(f"Error starting the bot: {e}")
+            logging.error("Failed to start event loop.")
