@@ -16,9 +16,13 @@ SEARCH_GROUP_ID = int(os.environ.get('SEARCH_GROUP_ID'))
 STORAGE_GROUP_ID = int(os.environ.get('STORAGE_GROUP_ID'))
 
 # MongoDB client setup
-client = MongoClient(DB_URL)
-db = client['MoviesDB']
-collection = db['Movies']
+try:
+    client = MongoClient(DB_URL)
+    db = client['MoviesDB']
+    collection = db['Movies']
+except errors.PyMongoError as e:
+    logging.error(f"Error connecting to MongoDB: {e}")
+    exit(1)
 
 # Logging setup
 logging.basicConfig(
@@ -45,7 +49,7 @@ async def start(update: Update, context: CallbackContext):
 
         welcome_message = (
             f"Hi {user_name}! 👋 I'm Olive, your group assistant. 🎉\n"
-            f"Use /help to learn how to use me. Have fun! 😄"
+            "Use me to search for movies, or upload a movie to the storage group! 🎥"
         )
         await update.message.reply_text(text=welcome_message, reply_markup=reply_markup)
     except Exception as e:
@@ -104,7 +108,7 @@ async def search_movie(update: Update, context: CallbackContext):
         await update.message.reply_text("Oops! Something went wrong. 😕 Please try again later.")
 
 
-async def delete_old_messages():
+async def delete_old_messages(application: ApplicationBuilder):
     """Delete messages in the search group that are older than 24 hours."""
     while True:
         try:
@@ -114,7 +118,7 @@ async def delete_old_messages():
             for message in search_group_messages:
                 if (now - message["time"]).total_seconds() > 86400:  # 24 hours
                     try:
-                        await context.bot.delete_message(chat_id=message["chat_id"], message_id=message["message_id"])
+                        await application.bot.delete_message(chat_id=message["chat_id"], message_id=message["message_id"])
                         to_delete.append(message)
                     except Exception as e:
                         logging.error(f"Failed to delete message {message['message_id']}: {e}")
@@ -151,7 +155,7 @@ async def main():
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text_message))
 
     # Start the background task for deleting old messages
-    asyncio.create_task(delete_old_messages())
+    asyncio.create_task(delete_old_messages(application))
 
     # Start the bot
     await application.run_polling()
