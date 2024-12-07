@@ -154,19 +154,6 @@ async def handle_text_message(update: Update, context: CallbackContext):
         logging.error(f"Error handling text message: {e}")
         await update.message.reply_text("Sorry, something went wrong while processing your message. 😕")
 
-# Add help command
-async def help_command(update: Update, context: CallbackContext):
-    """Provide help information to users."""
-    help_message = (
-        "Welcome to Olive, your movie assistant! 🎬 Here's how I can assist you:\n\n"
-        "/start - Get a welcome message and a link to add the bot to your chat.\n"
-        "/id - Get your user ID.\n"
-        "Upload movies in the designated storage group. 🎥\n"
-        "Search for movies by name in the search group. 🔍\n"
-        "New members are welcomed automatically in the search group! 🎉"
-    )
-    await update.message.reply_text(help_message)
-
 # Global error handling for unhandled exceptions
 async def error_handler(update: Update, context: CallbackContext):
     """Handle uncaught errors globally."""
@@ -182,7 +169,6 @@ async def main():
     # Command handlers
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("id", get_user_id))
-    application.add_handler(CommandHandler("help", help_command))
 
     # Message handlers
     application.add_handler(MessageHandler(filters.Document.ALL, add_movie))
