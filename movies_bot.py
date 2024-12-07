@@ -125,9 +125,16 @@ async def search_movie(update: Update, context: CallbackContext):
             search_group_messages.append({"chat_id": msg.chat_id, "message_id": msg.message_id, "time": datetime.datetime.utcnow()})
             return
 
+        # Check if the MongoDB collection is valid
+        if not collection:
+            await update.message.reply_text("Database connection is unavailable. 🛑 Please try again later.")
+            return
+
         # Search using regex
         regex_pattern = re.compile(re.escape(movie_name), re.IGNORECASE)
-        results = list(collection.find({"name": {"$regex": regex_pattern}}))
+        
+        # Ensure that find() returns a list, not None
+        results = list(collection.find({"name": {"$regex": regex_pattern}}))  # .find() should return an empty list if no results
 
         if results:
             for result in results:
@@ -143,6 +150,7 @@ async def search_movie(update: Update, context: CallbackContext):
     except Exception as e:
         logging.error(f"Error searching movie: {e}")
         await update.message.reply_text("Oops! Something went wrong. 😕 Please try again later.")
+
 
 async def delete_old_messages(application: ApplicationBuilder):
     """Delete messages in the search group that are older than 24 hours."""
