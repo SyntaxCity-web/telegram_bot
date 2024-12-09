@@ -10,7 +10,7 @@ from dotenv import load_dotenv
 import os
 import nest_asyncio
 
-# Apply nest_asyncio for nested event loops
+# Apply nest_asyncio for nested event loops (useful in environments like Jupyter)
 nest_asyncio.apply()
 
 # Load environment variables
@@ -150,15 +150,20 @@ async def main():
 
         # Run polling (blocks until stopped)
         await application.run_polling()
+    except asyncio.CancelledError:
+        logging.info("Bot operation cancelled.")
     except Exception as e:
         logging.error(f"Error in main: {e}")
     finally:
         logging.info("Shutting down bot...")
-        
+
         # Stop application if it was initialized
         if application:
-            await application.shutdown()
-        
+            try:
+                await application.shutdown()
+            except Exception as e:
+                logging.error(f"Error during application shutdown: {e}")
+
         # Cancel and clean up delete task
         if delete_task:
             delete_task.cancel()
