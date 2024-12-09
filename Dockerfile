@@ -1,28 +1,27 @@
-# Use the official Python image from Docker Hub
-FROM python:3.10-slim
+FROM python:3.11-slim
 
-# Set the working directory
 WORKDIR /app
 
-# Install system dependencies required for building Python packages
+# Install build dependencies
 RUN apt-get update && apt-get install -y \
     gcc \
     libffi-dev \
     libssl-dev \
     python3-dev \
-    build-essential
+    build-essential && \
+    rm -rf /var/lib/apt/lists/*
 
-# Copy requirements
+# Upgrade pip and install dependencies
+RUN pip install --upgrade pip setuptools wheel
+
+# Install app dependencies
 COPY requirements.txt .
-
-# Install dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy your app files
+# Copy app files
 COPY . .
 
 # Expose port
-EXPOSE 8088
+EXPOSE 8080
 
-# Set the command to run your bot
 CMD ["python", "bot.py"]
