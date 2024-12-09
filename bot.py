@@ -29,12 +29,14 @@ def connect_mongo():
     retries = 5
     while retries > 0:
         try:
-            client = MongoClient(DB_URL)
+            client = MongoClient(DB_URL, serverSelectionTimeoutMS=5000)  # Timeout to detect connection failure
             db = client['MoviesDB']
             collection = db['Movies']
+            # Test the connection
+            client.admin.command('ping')
             logging.info("MongoDB connection successful.")
             return collection
-        except errors.PyMongoError as e:
+        except errors.ServerSelectionTimeoutError as e:
             logging.error(f"MongoDB connection failed. Retrying... {e}")
             retries -= 1
             time.sleep(5)
@@ -49,6 +51,7 @@ logging.basicConfig(
     level=logging.INFO
 )
 
+# A list to track messages for cleanup
 search_group_messages = []
 
 async def start(update: Update, context: CallbackContext):
@@ -96,19 +99,22 @@ async def search_movie(update: Update, context: CallbackContext):
 
 async def delete_old_messages(application: ApplicationBuilder):
     """Delete messages in the search group that are older than 24 hours."""
-    while True:
-        try:
+    try:
+        while True:
             now = datetime.datetime.now(datetime.timezone.utc)
             to_delete = [
                 msg for msg in search_group_messages
                 if (now - msg["time"]).total_seconds() > 86400
             ]
             for message in to_delete:
-                await application.bot.delete_message(chat_id=message["chat_id"], message_id=message["message_id"])
-                search_group_messages.remove(message)
+                try:
+                    await application.bot.delete_message(chat_id=message["chat_id"], message_id=message["message_id"])
+                    search_group_messages.remove(message)
+                except Exception as e:
+                    logging.warning(f"Failed to delete message: {e}")
             await asyncio.sleep(3600)
-        except Exception as e:
-            logging.error(f"Error in delete_old_messages: {e}")
+    except Exception as e:
+        logging.error(f"Error in delete_old_messages: {e}")
 
 async def welcome_new_member(update: Update, context: CallbackContext):
     """Welcome new members to the search group."""
@@ -117,20 +123,23 @@ async def welcome_new_member(update: Update, context: CallbackContext):
 
 async def handle_text_message(update: Update, context: CallbackContext):
     """Handle text messages in the search group."""
+    search_group_messages.append({"chat_id": update.effective_chat.id, "message_id": update.message.message_id, "time": datetime.datetime.now(datetime.timezone.utc)})
     await search_movie(update, context)
 
 async def start_web_server():
     """Start a simple web server for health checks."""
     from aiohttp import web
+
     async def handle_health(request):
         return web.Response(text="Bot is running")
+
     app = web.Application()
     app.router.add_get('/', handle_health)
     runner = web.AppRunner(app)
     await runner.setup()
     site = web.TCPSite(runner, '0.0.0.0', PORT)
     await site.start()
-    logging.info("Web server started on port %d", PORT)
+    logging.info(f"Web server started on port {PORT}")
 
 async def main():
     """Main function to start the bot."""
@@ -142,12 +151,12 @@ async def main():
     application.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, welcome_new_member))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text_message))
 
-    asyncio.create_task(delete_old_messages(application))
+    tasks = [
+        asyncio.create_task(delete_old_messages(application)),
+        application.run_polling()
+    ]
 
-    # Await initialize() and shutdown() properly
-    await application.initialize()
-    await application.run_polling()
-    await application.shutdown()
+    await asyncio.gather(*tasks)
 
 # Check if the event loop is already running
 if __name__ == "__main__":
@@ -155,7 +164,6 @@ if __name__ == "__main__":
         asyncio.run(main())  # Will work if no loop is running
     except RuntimeError as e:
         if 'This event loop is already running' in str(e):
-            # If the event loop is already running (such as in Jupyter), use await instead
             import nest_asyncio
             nest_asyncio.apply()
             asyncio.run(main())
