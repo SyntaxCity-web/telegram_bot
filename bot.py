@@ -90,7 +90,7 @@ async def search_movie(update: Update, context: CallbackContext):
     else:
         await update.message.reply_text("Movie not found. 😔 Try a different search.")
 
-async def delete_old_messages(application: ApplicationBuilder):
+async def delete_old_messages(application):
     """Delete messages in the search group that are older than 24 hours."""
     while True:
         try:
@@ -113,10 +113,13 @@ async def delete_old_messages(application: ApplicationBuilder):
 async def start_web_server():
     """Start a simple web server for health checks."""
     from aiohttp import web
+
     async def handle_health(request):
         return web.Response(text="Bot is running")
+
     app = web.Application()
     app.router.add_get('/', handle_health)
+
     runner = web.AppRunner(app)
     await runner.setup()
     site = web.TCPSite(runner, '0.0.0.0', PORT)
@@ -125,36 +128,57 @@ async def start_web_server():
 
 async def main():
     """Main function to start the bot."""
+    application = None
+    delete_task = None
+
     try:
+        # Start web server for health checks
         await start_web_server()
+
+        # Build the Telegram bot application
         application = ApplicationBuilder().token(TOKEN).build()
 
         # Register handlers
         application.add_handler(CommandHandler("start", start))
         application.add_handler(MessageHandler(filters.Document.ALL, add_movie))
         application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, search_movie))
-        application.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, add_movie))
 
-        # Run the bot and auxiliary tasks
         logging.info("Starting bot...")
+
+        # Start auxiliary task
         delete_task = asyncio.create_task(delete_old_messages(application))
-        await application.run_polling()  # Blocks until stopped
+
+        # Run polling (blocks until stopped)
+        await application.run_polling()
     except Exception as e:
         logging.error(f"Error in main: {e}")
     finally:
         logging.info("Shutting down bot...")
-        # Clean up tasks like delete_old_messages
-        delete_task.cancel()
-        try:
-            await delete_task
-        except asyncio.CancelledError:
-            logging.info("Cleanup complete.")
+        
+        # Stop application if it was initialized
+        if application:
+            await application.shutdown()
+        
+        # Cancel and clean up delete task
+        if delete_task:
+            delete_task.cancel()
+            try:
+                await delete_task
+            except asyncio.CancelledError:
+                logging.info("Delete task cleaned up.")
+        
+        logging.info("Cleanup complete.")
 
-# Main execution block with proper event loop handling
 if __name__ == "__main__":
     try:
-        asyncio.run(main())  # Use asyncio.run() if no loop is running
-    except RuntimeError as e:
-        if 'This event loop is already running' in str(e):
-            loop = asyncio.get_event_loop()
-            loop.run_until_complete(main())  # Run main coroutine if loop exists
+        loop = asyncio.get_event_loop()
+        if loop.is_running():
+            # Use the running event loop
+            loop.create_task(main())
+        else:
+            # Start a new event loop
+            loop.run_until_complete(main())
+    except KeyboardInterrupt:
+        logging.info("Bot stopped manually.")
+    except Exception as e:
+        logging.error(f"Unexpected error in main block: {e}")
