@@ -1,23 +1,28 @@
 # Use the official Python image from Docker Hub
 FROM python:3.10-slim
 
-# Set the working directory in the container
+# Set the working directory
 WORKDIR /app
 
-# Copy the requirements.txt file into the container
+# Install system dependencies required for building Python packages
+RUN apt-get update && apt-get install -y \
+    gcc \
+    libffi-dev \
+    libssl-dev \
+    python3-dev \
+    build-essential
+
+# Copy requirements
 COPY requirements.txt .
 
-# Install the dependencies
+# Install dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy the rest of the bot files into the container
+# Copy your app files
 COPY . .
 
-# Expose the port if needed (for health checks)
+# Expose port
 EXPOSE 8088
 
-# Set the environment variable for the bot
-ENV PORT=80808
-
-# Command to run the bot (use your bot script here)
+# Set the command to run your bot
 CMD ["python", "bot.py"]
