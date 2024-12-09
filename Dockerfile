@@ -14,10 +14,10 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
 
 # Expose the port if needed (for health checks)
-EXPOSE 8080
+EXPOSE 8088
 
 # Set the environment variable for the bot
-ENV PORT=8080
+ENV PORT=80808
 
 # Command to run the bot (use your bot script here)
 CMD ["python", "bot.py"]
