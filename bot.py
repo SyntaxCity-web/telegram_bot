@@ -10,19 +10,27 @@ from dotenv import load_dotenv
 import os
 import nest_asyncio
 
+# Apply nest_asyncio for nested event loops
 nest_asyncio.apply()
 
+# Load environment variables
 load_dotenv()
 
+# Configuration variables from .env
 TOKEN = os.getenv('TOKEN')
 DB_URL = os.getenv('DB_URL')
 SEARCH_GROUP_ID = int(os.getenv('SEARCH_GROUP_ID'))
 STORAGE_GROUP_ID = int(os.getenv('STORAGE_GROUP_ID'))
 ADMIN_ID = int(os.getenv('ADMIN_ID'))
-PORT = int(os.getenv('PORT', 8080))
+PORT = int(os.getenv('PORT', 8080))  # Default to 8080 if not set
 
-logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
+# Logging setup
+logging.basicConfig(
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    level=logging.INFO
+)
 
+# MongoDB client setup
 def connect_mongo():
     retries = 5
     while retries > 0:
@@ -44,15 +52,20 @@ collection = connect_mongo()
 search_group_messages = []
 
 async def start(update: Update, context: CallbackContext):
+    """Handle the /start command."""
     user_name = update.effective_user.full_name or "there"
     keyboard = [[InlineKeyboardButton("Add me to your chat! 🤖", url="https://t.me/+ERz0bGWEHHBmNTU9")]]
     reply_markup = InlineKeyboardMarkup(keyboard)
-    await update.message.reply_text(f"Hi {user_name}! 👋 Use me to search or upload movies. 🎥", reply_markup=reply_markup)
+    await update.message.reply_text(
+        text=f"Hi {user_name}! 👋 Use me to search or upload movies. 🎥", reply_markup=reply_markup
+    )
 
 async def add_movie(update: Update, context: CallbackContext):
+    """Add a movie to the database when uploaded in the storage group."""
     if update.effective_chat.id != STORAGE_GROUP_ID:
         await update.message.reply_text("You can only upload movies in the designated storage group. 🎥")
         return
+
     file_info = update.message.document
     if file_info:
         movie_name = file_info.file_name
@@ -61,12 +74,15 @@ async def add_movie(update: Update, context: CallbackContext):
         await context.bot.send_message(chat_id=STORAGE_GROUP_ID, text=f"Added movie: {movie_name}")
 
 async def search_movie(update: Update, context: CallbackContext):
+    """Search for a movie in the database."""
     if update.effective_chat.id != SEARCH_GROUP_ID:
         await update.message.reply_text("Use this feature in the search group. 🔍")
         return
+
     movie_name = update.message.text.strip()
     regex_pattern = re.compile(re.escape(movie_name), re.IGNORECASE)
     results = list(collection.find({"name": {"$regex": regex_pattern}}))
+
     if results:
         for result in results:
             await update.message.reply_text(f"Found movie: {result['name']} 🎥")
@@ -75,19 +91,27 @@ async def search_movie(update: Update, context: CallbackContext):
         await update.message.reply_text("Movie not found. 😔 Try a different search.")
 
 async def delete_old_messages(application: ApplicationBuilder):
+    """Delete messages in the search group that are older than 24 hours."""
     while True:
         try:
             now = datetime.datetime.now(datetime.timezone.utc)
-            to_delete = [msg for msg in search_group_messages if (now - msg["time"]).total_seconds() > 86400]
+            to_delete = [
+                msg for msg in search_group_messages
+                if (now - msg["time"]).total_seconds() > 86400
+            ]
             for message in to_delete:
-                await application.bot.delete_message(chat_id=message["chat_id"], message_id=message["message_id"])
-                search_group_messages.remove(message)
+                try:
+                    await application.bot.delete_message(chat_id=message["chat_id"], message_id=message["message_id"])
+                    search_group_messages.remove(message)
+                except Exception as e:
+                    logging.warning(f"Failed to delete message: {e}")
             await asyncio.sleep(3600)
         except Exception as e:
             logging.error(f"Error in delete_old_messages: {e}")
             await asyncio.sleep(10)
 
 async def start_web_server():
+    """Start a simple web server for health checks."""
     from aiohttp import web
     async def handle_health(request):
         return web.Response(text="Bot is running")
@@ -100,23 +124,37 @@ async def start_web_server():
     logging.info(f"Web server started on port {PORT}")
 
 async def main():
-    await start_web_server()
-    application = ApplicationBuilder().token(TOKEN).build()
-    application.add_handler(CommandHandler("start", start))
-    application.add_handler(MessageHandler(filters.Document.ALL, add_movie))
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, search_movie))
-    application.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, add_movie))
+    """Main function to start the bot."""
+    try:
+        await start_web_server()
+        application = ApplicationBuilder().token(TOKEN).build()
 
-    while True:
+        # Register handlers
+        application.add_handler(CommandHandler("start", start))
+        application.add_handler(MessageHandler(filters.Document.ALL, add_movie))
+        application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, search_movie))
+        application.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, add_movie))
+
+        # Run the bot and auxiliary tasks
+        logging.info("Starting bot...")
+        delete_task = asyncio.create_task(delete_old_messages(application))
+        await application.run_polling()  # Blocks until stopped
+    except Exception as e:
+        logging.error(f"Error in main: {e}")
+    finally:
+        logging.info("Shutting down bot...")
+        # Clean up tasks like delete_old_messages
+        delete_task.cancel()
         try:
-            tasks = [
-                asyncio.create_task(delete_old_messages(application)),
-                application.run_polling()
-            ]
-            await asyncio.gather(*tasks)
-        except Exception as e:
-            logging.error(f"Main loop error: {e}")
-            await asyncio.sleep(5)
+            await delete_task
+        except asyncio.CancelledError:
+            logging.info("Cleanup complete.")
 
+# Main execution block with proper event loop handling
 if __name__ == "__main__":
-    asyncio.run(main())
+    try:
+        asyncio.run(main())  # Use asyncio.run() if no loop is running
+    except RuntimeError as e:
+        if 'This event loop is already running' in str(e):
+            loop = asyncio.get_event_loop()
+            loop.run_until_complete(main())  # Run main coroutine if loop exists
