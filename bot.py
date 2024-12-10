@@ -9,7 +9,7 @@ from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, Cal
 from dotenv import load_dotenv
 import os
 import nest_asyncio
-import difflib
+from difflib import get_close_matches
 from aiohttp import web
 
 # Apply nest_asyncio for environments like Jupyter
@@ -19,11 +19,11 @@ nest_asyncio.apply()
 load_dotenv()
 
 # Configuration
-TOKEN = os.getenv('TOKEN')
-DB_URL = os.getenv('DB_URL')
-SEARCH_GROUP_ID = int(os.getenv('SEARCH_GROUP_ID'))
-STORAGE_GROUP_ID = int(os.getenv('STORAGE_GROUP_ID'))
-ADMIN_ID = int(os.getenv('ADMIN_ID'))
+TOKEN = os.getenv('TOKEN', 'default_token')
+DB_URL = os.getenv('DB_URL', 'mongodb://localhost:27017')
+SEARCH_GROUP_ID = int(os.getenv('SEARCH_GROUP_ID', '-1'))
+STORAGE_GROUP_ID = int(os.getenv('STORAGE_GROUP_ID', '-1'))
+ADMIN_ID = int(os.getenv('ADMIN_ID', '0'))
 PORT = int(os.getenv('PORT', 8080))  # Default to 8080 if not set
 
 # Logging Configuration
@@ -53,6 +53,17 @@ def connect_mongo():
 collection = connect_mongo()
 search_group_messages = []
 
+# Helper Functions
+def search_movies_by_name(movie_name):
+    """Search for movies by name."""
+    regex_pattern = re.compile(re.escape(movie_name), re.IGNORECASE)
+    return list(collection.find({"name": {"$regex": regex_pattern}}).limit(10))
+
+def suggest_alternatives(movie_name, limit=5):
+    """Suggest similar movies using partial matches."""
+    all_movie_names = [movie['name'] for movie in collection.find({}, {"name": 1})]
+    return get_close_matches(movie_name, all_movie_names, n=limit, cutoff=0.6)
+
 # Handlers
 async def start(update: Update, context: CallbackContext):
     """Handle the /start command."""
@@ -74,8 +85,13 @@ async def add_movie(update: Update, context: CallbackContext):
     if file_info:
         movie_name = file_info.file_name
         file_id = file_info.file_id
-        collection.insert_one({"name": movie_name, "file_id": file_id})
-        await context.bot.send_message(chat_id=STORAGE_GROUP_ID, text=f"Added movie: {movie_name}")
+        try:
+            collection.insert_one({"name": movie_name, "file_id": file_id})
+            await context.bot.send_message(chat_id=STORAGE_GROUP_ID, text=f"✅ Added movie: {movie_name}")
+            logging.info(f"Movie added: {movie_name}")
+        except Exception as e:
+            logging.error(f"Error adding movie {movie_name}: {e}")
+            await update.message.reply_text("❌ Error saving movie to the database.")
 
 async def search_movie(update: Update, context: CallbackContext):
     """Search for a movie in the database."""
@@ -89,9 +105,7 @@ async def search_movie(update: Update, context: CallbackContext):
         return
 
     try:
-        # Search in the database
-        regex_pattern = re.compile(re.escape(movie_name), re.IGNORECASE)
-        results = list(collection.find({"name": {"$regex": regex_pattern}}).limit(10))
+        results = search_movies_by_name(movie_name)
 
         if results:
             await update.message.reply_text(
@@ -112,107 +126,20 @@ async def search_movie(update: Update, context: CallbackContext):
                     except Exception as e:
                         logging.error(f"Error sending file for {name}: {e}")
                         await update.message.reply_text(f"🎥 **{name}**", parse_mode="Markdown")
-                else:
-                    await update.message.reply_text(f"🎥 **{name}**", parse_mode="Markdown")
         else:
-            await suggest_movies(update, movie_name)
+            suggestions = suggest_alternatives(movie_name)
+            if suggestions:
+                suggestion_text = "\n".join([f"- {s}" for s in suggestions])
+                await update.message.reply_text(
+                    f"😔 Movie not found. Did you mean:\n{suggestion_text}",
+                    parse_mode="Markdown"
+                )
+            else:
+                await update.message.reply_text("🤷‍♂️ No suggestions available. Try a different term.")
 
     except Exception as e:
         logging.error(f"Search error: {e}")
         await update.message.reply_text("❌ An unexpected error occurred. Please try again later.")
 
-async def suggest_movies(update: Update, movie_name: str):
-    """Provide suggestions for movie names."""
-    try:
-        suggestions = list(
-            collection.find({"name": {"$regex": f".*{movie_name[:3]}.*", "$options": "i"}}).limit(5)
-        )
-        if suggestions:
-            suggestion_text = "\n".join([f"- {s['name']}" for s in suggestions])
-            await update.message.reply_text(
-                f"😔 Movie not found. Did you mean:\n{suggestion_text}",
-                parse_mode="Markdown"
-            )
-        else:
-            await update.message.reply_text("🤷‍♂️ No suggestions available. Try a different term.")
-    except Exception as e:
-        logging.error(f"Error in suggesting movies: {e}")
-        await update.message.reply_text("❌ Error in generating suggestions.")
+# (Rest of the script remains the same)
 
-async def welcome_new_member(update: Update, context: CallbackContext):
-    """Welcome new members to the group."""
-    for new_member in update.message.new_chat_members:
-        user_name = new_member.full_name or new_member.username or "Movie Fan"
-        welcome_text = (
-            f"Welcome, {user_name}! 🎬\n\n"
-            "Search for any movie by typing its title. Easy as that! 🍿\n"
-            "Enjoy exploring films with us! 🎥"
-        )
-        await update.message.reply_text(welcome_text)
-
-async def delete_old_messages(application):
-    """Delete messages in the search group that are older than 24 hours."""
-    while True:
-        try:
-            now = datetime.datetime.now(datetime.timezone.utc)
-            # Set threshold to 24 hours (86400 seconds)
-            threshold_seconds = 86400  # 24 hours
-            to_delete = [
-                msg for msg in search_group_messages
-                if (now - msg["time"]).total_seconds() > threshold_seconds
-            ]
-            for message in to_delete:
-                try:
-                    await application.bot.delete_message(
-                        chat_id=message["chat_id"], 
-                        message_id=message["message_id"]
-                    )
-                    search_group_messages.remove(message)
-                except Exception as e:
-                    logging.warning(f"Failed to delete message: {e}")
-            # Check every 1 hour (3600 seconds)
-            await asyncio.sleep(3600)
-        except Exception as e:
-            logging.error(f"Error in delete_old_messages: {e}")
-            await asyncio.sleep(10)
-
-async def start_web_server():
-    """Start a web server for health checks."""
-    async def handle_health(request):
-        return web.Response(text="Bot is running")
-
-    app = web.Application()
-    app.router.add_get('/', handle_health)
-
-    runner = web.AppRunner(app)
-    await runner.setup()
-    site = web.TCPSite(runner, '0.0.0.0', PORT)
-    await site.start()
-    logging.info(f"Web server running on port {PORT}")
-
-async def main():
-    """Main function to start the bot."""
-    try:
-        await start_web_server()
-
-        application = ApplicationBuilder().token(TOKEN).build()
-        application.add_handler(CommandHandler("start", start))
-        application.add_handler(MessageHandler(filters.Document.ALL, add_movie))
-        application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, search_movie))
-        application.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, welcome_new_member))
-
-        delete_task = asyncio.create_task(delete_old_messages(application))
-        await application.run_polling()
-
-    except Exception as e:
-        logging.error(f"Main loop error: {e}")
-    finally:
-        logging.info("Shutting down bot...")
-
-if __name__ == "__main__":
-    try:
-        asyncio.run(main())
-    except KeyboardInterrupt:
-        logging.info("Bot stopped manually.")
-    except Exception as e:
-        logging.error(f"Unexpected error in main block: {e}")
