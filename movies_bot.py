@@ -9,6 +9,7 @@ from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, Cal
 from dotenv import load_dotenv
 import os
 import nest_asyncio
+import difflib
 
 # Apply nest_asyncio for nested event loops (useful in environments like Jupyter)
 nest_asyncio.apply()
