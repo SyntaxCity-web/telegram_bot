@@ -95,7 +95,6 @@ async def search_movie(update: Update, context: CallbackContext):
 
     try:
         # Create case-insensitive regex pattern with partial matching
-        # This allows more flexible searching
         regex_pattern = re.compile(re.escape(movie_name), re.IGNORECASE)
         
         # Perform text search with more sophisticated matching
@@ -118,24 +117,20 @@ async def search_movie(update: Update, context: CallbackContext):
                 name = result.get('name', 'Unknown Movie')
                 file_id = result.get('file_id')
                 
-                # Construct rich movie information
-                reply_text = f"🎥 **Movie Name:** {name}\n" \
-                             f"📂 **File ID:** {file_id if file_id else 'Not Available'}"
-                
                 # Send movie details with file if available
                 if file_id:
                     try:
                         await context.bot.send_document(
                             chat_id=update.effective_chat.id, 
                             document=file_id, 
-                            caption=reply_text, 
+                            caption=f"🎥 **{name}**", 
                             parse_mode="Markdown"
                         )
                     except Exception as file_error:
                         logging.error(f"Error sending file for {name}: {file_error}")
-                        await update.message.reply_text(reply_text, parse_mode="Markdown")
+                        await update.message.reply_text(f"🎥 **{name}**", parse_mode="Markdown")
                 else:
-                    await update.message.reply_text(reply_text, parse_mode="Markdown")
+                    await update.message.reply_text(f"🎥 **{name}**", parse_mode="Markdown")
 
         else:
             # Advanced suggestions with more comprehensive search
@@ -167,8 +162,6 @@ async def search_movie(update: Update, context: CallbackContext):
             "❌ An unexpected error occurred during the search. Please try again later.",
             parse_mode="Markdown"
         )
-            )
-
 async def welcome_new_member(update: Update, context: CallbackContext):
     """Welcome new members to the movie search group."""
     if update.message.new_chat_members:
