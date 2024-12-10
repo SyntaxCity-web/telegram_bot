@@ -51,6 +51,7 @@ def connect_mongo():
 collection = connect_mongo()
 search_group_messages = []
 
+# Handlers
 async def start(update: Update, context: CallbackContext):
     """Handle the /start command."""
     user_name = update.effective_user.full_name or "there"
@@ -101,7 +102,6 @@ async def search_movie(update: Update, context: CallbackContext):
             else:
                 await update.message.reply_text(reply_text, parse_mode="Markdown")
     else:
-        # If no results, suggest a few similar movie names
         suggestions = list(collection.find({"name": {"$regex": f".*{movie_name[:3]}.*", "$options": "i"}}).limit(5))
         if suggestions:
             suggestion_text = "\n".join([f"- {s['name']}" for s in suggestions])
@@ -114,6 +114,19 @@ async def search_movie(update: Update, context: CallbackContext):
                 "😔 Movie not found. Try a different search or check your spelling."
             )
 
+async def welcome_new_member(update: Update, context: CallbackContext):
+    """Welcome new members to the movie search group."""
+    if update.message.new_chat_members:
+        for new_member in update.message.new_chat_members:
+            user_name = new_member.full_name or new_member.username or "Movie Fan"
+            
+            welcome_text = (
+                f"Welcome, {user_name}! 🎬\n\n"
+                "Search for any movie by typing its title. Easy as that! 🍿\n"
+                "Enjoy exploring films with us! 🎥"
+            )
+            
+            await update.message.reply_text(welcome_text)
 
 async def delete_old_messages(application):
     """Delete messages in the search group that are older than 24 hours."""
@@ -167,6 +180,7 @@ async def main():
         application.add_handler(CommandHandler("start", start))
         application.add_handler(MessageHandler(filters.Document.ALL, add_movie))
         application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, search_movie))
+        application.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, welcome_new_member))
 
         logging.info("Starting bot...")
 
