@@ -24,7 +24,7 @@ DB_URL = os.getenv('DB_URL')
 SEARCH_GROUP_ID = int(os.getenv('SEARCH_GROUP_ID'))
 STORAGE_GROUP_ID = int(os.getenv('STORAGE_GROUP_ID'))
 ADMIN_ID = int(os.getenv('ADMIN_ID'))
-PORT = int(os.getenv('PORT', 8080))  # Default to 8080 if not set
+PORT = int(os.getenv('PORT', 8088))  # Default to 8080 if not set
 
 # Logging Configuration
 logging.basicConfig(
