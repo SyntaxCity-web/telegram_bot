@@ -75,43 +75,97 @@ async def add_movie(update: Update, context: CallbackContext):
         await context.bot.send_message(chat_id=STORAGE_GROUP_ID, text=f"Added movie: {movie_name}")
 
 async def search_movie(update: Update, context: CallbackContext):
-    """Search for a movie in the database."""
+    """
+    Search for a movie in the database with advanced features and error handling.
+    
+    :param update: Telegram update object
+    :param context: Callback context for the bot
+    """
+    # Validate chat context
     if update.effective_chat.id != SEARCH_GROUP_ID:
-        await update.message.reply_text("Use this feature in the search group. 🔍")
+        await update.message.reply_text("❌ This feature can only be used in the designated search group. Please switch to the correct chat.")
         return
 
+    # Extract and validate movie name
     movie_name = update.message.text.strip()
     if not movie_name:
-        await update.message.reply_text("Please provide a movie name to search. 🤔")
+        await update.message.reply_text("🚨 Please provide a movie name to search. Use /search <movie_name>")
         return
 
-    regex_pattern = re.compile(re.escape(movie_name), re.IGNORECASE)
-    results = list(collection.find({"name": {"$regex": regex_pattern}}))
+    try:
+        # Create case-insensitive regex pattern with partial matching
+        # This allows more flexible searching
+        regex_pattern = re.compile(re.escape(movie_name), re.IGNORECASE)
+        
+        # Perform text search with more sophisticated matching
+        results = list(collection.find({
+            "$or": [
+                {"name": {"$regex": regex_pattern}},
+                {"name": {"$regex": f".*{re.escape(movie_name)}.*", "$options": "i"}}
+            ]
+        }).limit(10))  # Limit results to prevent overwhelming response
 
-    if results:
-        await update.message.reply_text(
-            f"🔍 **Found {len(results)} result(s) for '{movie_name}':**",
-            parse_mode="Markdown"
-        )
-        for result in results:
-            name = result.get('name', 'Unknown Movie')
-            file_id = result.get('file_id', None)
-            reply_text = f"🎥 **Movie Name:** {name}"
-            if file_id:
-                await context.bot.send_document(chat_id=update.effective_chat.id, document=file_id, caption=reply_text, parse_mode="Markdown")
-            else:
-                await update.message.reply_text(reply_text, parse_mode="Markdown")
-    else:
-        suggestions = list(collection.find({"name": {"$regex": f".*{movie_name[:3]}.*", "$options": "i"}}).limit(5))
-        if suggestions:
-            suggestion_text = "\n".join([f"- {s['name']}" for s in suggestions])
+        if results:
+            # Header message with result count
             await update.message.reply_text(
-                f"😔 Movie not found. Did you mean:\n{suggestion_text}",
+                f"🔍 **Found {len(results)} result(s) for '{movie_name}':**",
                 parse_mode="Markdown"
             )
+
+            # Process and send results with pagination-like handling
+            for result in results:
+                name = result.get('name', 'Unknown Movie')
+                file_id = result.get('file_id')
+                
+                # Construct rich movie information
+                reply_text = f"🎥 **Movie Name:** {name}\n" \
+                             f"📂 **File ID:** {file_id if file_id else 'Not Available'}"
+                
+                # Send movie details with file if available
+                if file_id:
+                    try:
+                        await context.bot.send_document(
+                            chat_id=update.effective_chat.id, 
+                            document=file_id, 
+                            caption=reply_text, 
+                            parse_mode="Markdown"
+                        )
+                    except Exception as file_error:
+                        logging.error(f"Error sending file for {name}: {file_error}")
+                        await update.message.reply_text(reply_text, parse_mode="Markdown")
+                else:
+                    await update.message.reply_text(reply_text, parse_mode="Markdown")
+
         else:
-            await update.message.reply_text(
-                "😔 Movie not found. Try a different search or check your spelling."
+            # Advanced suggestions with more comprehensive search
+            suggestions = list(
+                collection.find({
+                    "$or": [
+                        {"name": {"$regex": f".*{movie_name[:3]}.*", "$options": "i"}},
+                        {"name": {"$regex": f".*{difflib.get_close_matches(movie_name, [doc['name'] for doc in collection.find()], n=3, cutoff=0.6)[0] if difflib.get_close_matches(movie_name, [doc['name'] for doc in collection.find()], n=3, cutoff=0.6) else ''}.*", "$options": "i"}}
+                    ]
+                }).limit(5)
+            )
+
+            if suggestions:
+                suggestion_text = "\n".join([f"- {s['name']}" for s in suggestions])
+                await update.message.reply_text(
+                    f"😔 Movie not found. Did you mean:\n{suggestion_text}",
+                    parse_mode="Markdown"
+                )
+            else:
+                await update.message.reply_text(
+                    "🤷‍♂️ No movies found. Try a different search term or check your spelling carefully.",
+                    parse_mode="Markdown"
+                )
+
+    except Exception as e:
+        # Comprehensive error handling
+        logging.error(f"Search error: {e}")
+        await update.message.reply_text(
+            "❌ An unexpected error occurred during the search. Please try again later.",
+            parse_mode="Markdown"
+        )
             )
 
 async def welcome_new_member(update: Update, context: CallbackContext):
