@@ -3,4 +3,3 @@ pymongo
 nest-asyncio
 python-dotenv
 aiohttp
-backoff
