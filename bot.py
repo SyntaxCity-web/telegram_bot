@@ -3,6 +3,7 @@ import re
 import datetime
 import asyncio
 import time
+from collections import defaultdict
 from pymongo import MongoClient, errors
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, CallbackContext, filters
@@ -72,15 +73,8 @@ async def start(update: Update, context: CallbackContext):
         reply_markup=reply_markup
     )
 
-
-
 # Temporary storage for incomplete movie uploads
 upload_sessions = {}
-
-
-
-from collections import defaultdict
-from pymongo import MongoClient
 
 upload_sessions = defaultdict(lambda: {'files': [], 'image': None, 'caption': None})
 
@@ -227,22 +221,42 @@ async def search_movie(update: Update, context: CallbackContext):
         )
 
 async def suggest_movies(update: Update, movie_name: str):
-    """Provide suggestions for movie names."""
+    """Provide professional-grade suggestions for movie names."""
     try:
+        # Find movies with partial matches
         suggestions = list(
-            collection.find({"name": {"$regex": f".*{movie_name[:3]}.*", "$options": "i"}}).limit(5)
+            collection.find({"name": {"$regex": f".*{re.escape(movie_name[:3])}.*", "$options": "i"}}).limit(5)
         )
+        
         if suggestions:
-            suggestion_text = "\n".join([sanitize_unicode(f"- {s['name']}") for s in suggestions])
+            # Create a list of suggestions with inline buttons
+            suggestion_buttons = [
+                [InlineKeyboardButton(s['name'], callback_data=f"search:{s['_id']}")]
+                for s in suggestions
+            ]
+            reply_markup = InlineKeyboardMarkup(suggestion_buttons)
+
             await update.message.reply_text(
-                sanitize_unicode(f"😔 Movie not found. Did you mean:\n{suggestion_text}"),
-                parse_mode="Markdown"
+                sanitize_unicode(
+                    f"🤔 Movie not found. Did you mean one of these?\n"
+                    "Click a name to search:"
+                ),
+                reply_markup=reply_markup,
             )
         else:
-            await update.message.reply_text(sanitize_unicode("🤷‍♂️ No suggestions available. Try a different term."))
+            # No suggestions found
+            await update.message.reply_text(
+                sanitize_unicode(
+                    "😔 Sorry, no matching movies found.\n"
+                    "Tip: Try searching with a different name or spelling."
+                )
+            )
     except Exception as e:
         logging.error(f"Error in suggesting movies: {sanitize_unicode(str(e))}")
-        await update.message.reply_text(sanitize_unicode("❌ Error in generating suggestions."))
+        await update.message.reply_text(
+            sanitize_unicode("❌ Error in generating suggestions.")
+        )
+
 
 async def welcome_new_member(update: Update, context: CallbackContext):
     """Welcome new members to the group."""
