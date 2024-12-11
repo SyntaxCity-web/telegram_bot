@@ -222,92 +222,23 @@ async def search_movie(update: Update, context: CallbackContext):
         )
 
 async def suggest_movies(update: Update, movie_name: str):
-    """Provide professional-grade suggestions for movie names."""
+    """Provide suggestions for movie names."""
     try:
-        # Find movies with partial matches
         suggestions = list(
-            collection.find({"name": {"$regex": f".*{re.escape(movie_name[:3])}.*", "$options": "i"}}).limit(5)
+            collection.find({"name": {"$regex": f".*{movie_name[:3]}.*", "$options": "i"}}).limit(5)
         )
-        
         if suggestions:
-            # Create a list of suggestions with inline buttons
-            suggestion_buttons = [
-                [InlineKeyboardButton(s['name'], callback_data=f"search:{str(s['_id'])}")]
-                for s in suggestions
-            ]
-            reply_markup = InlineKeyboardMarkup(suggestion_buttons)
-
+            suggestion_text = "\n".join([sanitize_unicode(f"- {s['name']}") for s in suggestions])
             await update.message.reply_text(
-                sanitize_unicode(
-                    f"🤔 Movie not found. Did you mean one of these?\n"
-                    "Click a name to search:"
-                ),
-                reply_markup=reply_markup,
+                sanitize_unicode(f"😔 Movie not found. Did you mean:\n{suggestion_text}"),
+                parse_mode="Markdown"
             )
         else:
-            # No suggestions found
-            await update.message.reply_text(
-                sanitize_unicode(
-                    "😔 Sorry, no matching movies found.\n"
-                    "Tip: Try searching with a different name or spelling."
-                )
-            )
+            await update.message.reply_text(sanitize_unicode("🤷‍♂️ No suggestions available. Try a different term."))
     except Exception as e:
         logging.error(f"Error in suggesting movies: {sanitize_unicode(str(e))}")
-        await update.message.reply_text(
-            sanitize_unicode("❌ Error in generating suggestions.")
-        )
+        await update.message.reply_text(sanitize_unicode("❌ Error in generating suggestions."))
 
-async def handle_inline_search(update: Update, context: CallbackContext):
-    """Handle inline search triggered by button clicks."""
-    query = update.callback_query
-    await query.answer()  # Acknowledge the callback to prevent "button stuck" issues
-
-    try:
-        # Extract movie ID from the callback data
-        callback_data = query.data
-        if callback_data.startswith("search:"):
-            movie_id = callback_data.split(":", 1)[1]
-            
-            # Fetch movie details from the database
-            result = collection.find_one({"_id": ObjectId(movie_id)})
-            if result:
-                name = result.get('name', 'Unknown Movie')
-                media = result.get('media', {})
-
-                # Get image and document file info
-                image_file_id = media.get('image', {}).get('file_id')
-                document_files = media.get('documents', [])
-
-                # Send the movie details
-                if image_file_id:
-                    await context.bot.send_photo(
-                        chat_id=query.message.chat_id,
-                        photo=image_file_id,
-                        caption=sanitize_unicode(f"🎥 **{name}**"),
-                        parse_mode="Markdown"
-                    )
-                
-                for doc in document_files:
-                    document_file_id = doc.get('file_id')
-                    if document_file_id:
-                        await context.bot.send_document(
-                            chat_id=query.message.chat_id,
-                            document=document_file_id,
-                        )
-            else:
-                await query.message.reply_text(
-                    sanitize_unicode("❌ Movie details not found.")
-                )
-        else:
-            await query.message.reply_text(
-                sanitize_unicode("❌ Invalid action.")
-            )
-    except Exception as e:
-        logging.error(f"Error in inline search handler: {sanitize_unicode(str(e))}")
-        await query.message.reply_text(
-            sanitize_unicode("❌ Failed to process the search. Please try again.")
-        )
 
 async def welcome_new_member(update: Update, context: CallbackContext):
     """Welcome new members to the group."""
