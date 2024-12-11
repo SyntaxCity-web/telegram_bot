@@ -11,6 +11,7 @@ import os
 import nest_asyncio
 import difflib
 from aiohttp import web
+import uuid
 
 # Apply nest_asyncio for environments like Jupyter
 nest_asyncio.apply()
@@ -24,7 +25,7 @@ DB_URL = os.getenv('DB_URL')
 SEARCH_GROUP_ID = int(os.getenv('SEARCH_GROUP_ID'))
 STORAGE_GROUP_ID = int(os.getenv('STORAGE_GROUP_ID'))
 ADMIN_ID = int(os.getenv('ADMIN_ID'))
-PORT = int(os.getenv('PORT', 8088))  # Default to 8080 if not set
+PORT = int(os.getenv('PORT', 8088))  # Default to 8088 if not set
 
 # Logging Configuration
 logging.basicConfig(
@@ -53,6 +54,13 @@ def connect_mongo():
 collection = connect_mongo()
 search_group_messages = []
 
+# Helper function to sanitize Unicode text
+def sanitize_unicode(text):
+    """
+    Sanitize Unicode text to remove invalid characters, such as surrogate pairs.
+    """
+    return text.encode('utf-8', 'ignore').decode('utf-8')
+
 # Handlers
 async def start(update: Update, context: CallbackContext):
     """Handle the /start command."""
@@ -60,32 +68,104 @@ async def start(update: Update, context: CallbackContext):
     keyboard = [[InlineKeyboardButton("Add me to your chat! 🤖", url="https://t.me/+ERz0bGWEHHBmNTU9")]]
     reply_markup = InlineKeyboardMarkup(keyboard)
     await update.message.reply_text(
-        text=f"Hi {user_name}! 👋 Use me to search or upload movies. 🎥",
+        text=f"Hi {sanitize_unicode(user_name)}! 👋 Use me to search or upload movies. 🎥",
         reply_markup=reply_markup
     )
 
+# Temporary storage for incomplete movie uploads
+upload_sessions = {}
+
 async def add_movie(update: Update, context: CallbackContext):
     """Add a movie to the database from the storage group."""
+    global upload_sessions
+
     if update.effective_chat.id != STORAGE_GROUP_ID:
-        await update.message.reply_text("You can only upload movies in the designated storage group. 🎥")
+        await update.message.reply_text(sanitize_unicode("❌ You can only upload movies in the designated storage group. 🎥"))
         return
 
+    user_id = update.effective_user.id
+    session = upload_sessions.get(user_id, {'files': [], 'image': None, 'caption': None})
+
     file_info = update.message.document
+    image_info = update.message.photo
+    caption = sanitize_unicode(update.message.caption or "")
+
+    # If the user uploads a document (movie file)
     if file_info:
-        movie_name = file_info.file_name
-        file_id = file_info.file_id
-        collection.insert_one({"name": movie_name, "file_id": file_id})
-        await context.bot.send_message(chat_id=STORAGE_GROUP_ID, text=f"Added movie: {movie_name}")
+        session['files'].append({
+            'file_id': file_info.file_id,
+            'file_name': sanitize_unicode(file_info.file_name)
+        })
+        session['caption'] = caption or session.get('caption', file_info.file_name)
+        upload_sessions[user_id] = session
+
+        total_files = len(session['files'])
+        await update.message.reply_text(
+            sanitize_unicode(f"✅ {total_files} file(s) received! Now, please upload an image for the related file(s).")
+        )
+
+    # If the user uploads an image (poster for the movie)
+    elif image_info:
+        largest_photo = max(image_info, key=lambda photo: photo.width * photo.height)
+        session['image'] = {
+            'file_id': largest_photo.file_id,
+            'width': largest_photo.width,
+            'height': largest_photo.height
+        }
+        session['caption'] = caption or session.get('caption')
+        upload_sessions[user_id] = session
+        await update.message.reply_text(sanitize_unicode("✅ Image received! Now, please upload the movie file(s)."))
+
+    # Check if both files and image are present
+    if session['files'] and session['image']:
+        # Use the first file name as the movie name
+        movie_name = session['files'][0]['file_name']  # First file's name
+
+        # Generate a unique movie ID
+        movie_id = str(uuid.uuid4())
+        movie_entry = {
+            'movie_id': movie_id,
+            'name': movie_name,  # Save the movie name as the first file name
+            'media': {
+                'documents': session['files'],  # Store multiple documents
+                'image': session['image']
+            }
+        }
+
+        # Insert into the database
+        try:
+            collection.insert_one(movie_entry)
+            response_text = sanitize_unicode(f"✅ Successfully added movie: {movie_name}")
+            await update.message.reply_text(response_text)
+
+            # Send a message to the group about the new movie
+            if SEARCH_GROUP_ID:
+                await context.bot.send_message(
+                    chat_id=SEARCH_GROUP_ID,
+                    text=sanitize_unicode(f"New movie added: **{movie_name}**! 🎬\nCheck it out! 🍿")
+                )
+
+            # Clear session after successful upload
+            del upload_sessions[user_id]  
+        except Exception as e:
+            logging.error(f"Error adding movie: {sanitize_unicode(str(e))}")
+            await update.message.reply_text(sanitize_unicode("❌ Failed to add the movie. Please try again later."))
+
+    # If neither file nor image is provided
+    if not (file_info or image_info):
+        await update.message.reply_text(sanitize_unicode("Please upload both a movie file and an image."))
+
+
 
 async def search_movie(update: Update, context: CallbackContext):
     """Search for a movie in the database."""
     if update.effective_chat.id != SEARCH_GROUP_ID:
-        await update.message.reply_text("❌ Use this feature in the designated search group.")
+        await update.message.reply_text(sanitize_unicode("❌ Use this feature in the designated search group."))
         return
 
-    movie_name = update.message.text.strip()
+    movie_name = sanitize_unicode(update.message.text.strip())
     if not movie_name:
-        await update.message.reply_text("🚨 Provide a movie name to search. Use /search <movie_name>")
+        await update.message.reply_text(sanitize_unicode("🚨 Provide a movie name to search. Use /search <movie_name>"))
         return
 
     try:
@@ -95,54 +175,99 @@ async def search_movie(update: Update, context: CallbackContext):
 
         if results:
             await update.message.reply_text(
-                f"🔍 **Found {len(results)} result(s) for '{movie_name}':**",
+                sanitize_unicode(f"🔍 **Found {len(results)} result(s) for '{movie_name}':**"),
                 parse_mode="Markdown"
             )
             for result in results:
                 name = result.get('name', 'Unknown Movie')
-                file_id = result.get('file_id')
-                if file_id:
+                media = result.get('media', {})
+
+                # Get image and document file info
+                image_file_id = media.get('image', {}).get('file_id')
+                document_files = media.get('documents', [])
+
+                # If both image and document are found
+                if image_file_id and document_files:
+                    # Send the image first
                     try:
-                        await context.bot.send_document(
+                        await context.bot.send_photo(
                             chat_id=update.effective_chat.id,
-                            document=file_id,
-                            caption=f"🎥 **{name}**",
+                            photo=image_file_id,
+                            caption=sanitize_unicode(f"🎥 **{name}**"),
                             parse_mode="Markdown"
                         )
+                        # Send each document related to the movie
+                        for doc in document_files:
+                            document_file_id = doc.get('file_id')
+                            document_file_name = doc.get('file_name')
+                            if document_file_id:
+                                await context.bot.send_document(
+                                    chat_id=update.effective_chat.id,
+                                    document=document_file_id,
+                                    # caption=sanitize_unicode(f"🎥 **{name}**"),
+                                    parse_mode="Markdown"
+                                )
                     except Exception as e:
-                        logging.error(f"Error sending file for {name}: {e}")
-                        await update.message.reply_text(f"🎥 **{name}**", parse_mode="Markdown")
+                        logging.error(f"Error sending media for {sanitize_unicode(name)}: {sanitize_unicode(str(e))}")
                 else:
-                    await update.message.reply_text(f"🎥 **{name}**", parse_mode="Markdown")
+                    # If no image or document is found, just send a text message
+                    await update.message.reply_text(
+                        sanitize_unicode(f"🎥 **{name}** (media missing)"),
+                        parse_mode="Markdown"
+                    )
         else:
             await suggest_movies(update, movie_name)
 
     except Exception as e:
-        logging.error(f"Search error: {e}")
-        await update.message.reply_text("❌ An unexpected error occurred. Please try again later.")
+        logging.error(f"Search error: {sanitize_unicode(str(e))}")
+        await update.message.reply_text(
+            sanitize_unicode("❌ An unexpected error occurred. Please try again later.")
+        )
 
 async def suggest_movies(update: Update, movie_name: str):
-    """Provide suggestions for movie names."""
+    """Provide suggestions for movie names based on the search input."""
+    # Prevent very short or single-letter queries
+    if len(movie_name) <= 2:
+        await update.message.reply_text(sanitize_unicode("🤔 Please provide a more complete movie name for better suggestions."))
+        return
+
     try:
+        # Search for similar movie names in the database
         suggestions = list(
             collection.find({"name": {"$regex": f".*{movie_name[:3]}.*", "$options": "i"}}).limit(5)
         )
+
         if suggestions:
-            suggestion_text = "\n".join([f"- {s['name']}" for s in suggestions])
-            await update.message.reply_text(
-                f"😔 Movie not found. Did you mean:\n{suggestion_text}",
-                parse_mode="Markdown"
-            )
+            suggestion_text = "\n".join([sanitize_unicode(f"- {s['name']}") for s in suggestions])
+
+            # Check if there's a close match (similar to 'venom' when searching for 'vanom')
+            close_matches = difflib.get_close_matches(movie_name.lower(), [s['name'].lower() for s in suggestions], n=1, cutoff=0.7)
+
+            if close_matches:
+                # If a close match is found, suggest it directly
+                suggested_movie = close_matches[0]
+                await update.message.reply_text(
+                    sanitize_unicode(f"😔 Movie not found. Did you mean **{suggested_movie.title()}**?\n{suggestion_text}"),
+                    parse_mode="Markdown"
+                )
+            else:
+                # Otherwise, list all suggestions
+                await update.message.reply_text(
+                    sanitize_unicode(f"😔 Movie not found. Here are some suggestions:\n{suggestion_text}"),
+                    parse_mode="Markdown"
+                )
         else:
-            await update.message.reply_text("🤷‍♂️ No suggestions available. Try a different term.")
+            await update.message.reply_text(sanitize_unicode("🤷‍♂️ No suggestions available. Try a different term."))
+
     except Exception as e:
-        logging.error(f"Error in suggesting movies: {e}")
-        await update.message.reply_text("❌ Error in generating suggestions.")
+        logging.error(f"Error in suggesting movies: {sanitize_unicode(str(e))}")
+        await update.message.reply_text(sanitize_unicode("❌ Error in generating suggestions."))
+
 
 async def welcome_new_member(update: Update, context: CallbackContext):
     """Welcome new members to the group."""
     for new_member in update.message.new_chat_members:
-        user_name = new_member.full_name or new_member.username or "Movie Fan"
+        user_name = sanitize_unicode(new_member.full_name or new_member.username or "Movie Fan")
         welcome_text = (
             f"Welcome, {user_name}! 🎬\n\n"
             "Search for any movie by typing its title. Easy as that! 🍿\n"
@@ -198,6 +323,7 @@ async def main():
         application = ApplicationBuilder().token(TOKEN).build()
         application.add_handler(CommandHandler("start", start))
         application.add_handler(MessageHandler(filters.Document.ALL, add_movie))
+        application.add_handler(MessageHandler(filters.PHOTO, add_movie))
         application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, search_movie))
         application.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, welcome_new_member))
 
