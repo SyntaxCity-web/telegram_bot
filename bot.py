@@ -225,44 +225,22 @@ async def search_movie(update: Update, context: CallbackContext):
         )
 
 async def suggest_movies(update: Update, movie_name: str):
-    """Provide suggestions for movie names based on the search input."""
-    # Prevent very short or single-letter queries
-    if len(movie_name) <= 2:
-        await update.message.reply_text(sanitize_unicode("🤔 Please provide a more complete movie name for better suggestions."))
-        return
-
+    """Provide suggestions for movie names."""
     try:
-        # Search for similar movie names in the database
         suggestions = list(
             collection.find({"name": {"$regex": f".*{movie_name[:3]}.*", "$options": "i"}}).limit(5)
         )
-
         if suggestions:
             suggestion_text = "\n".join([sanitize_unicode(f"- {s['name']}") for s in suggestions])
-
-            # Check if there's a close match (similar to 'venom' when searching for 'vanom')
-            close_matches = difflib.get_close_matches(movie_name.lower(), [s['name'].lower() for s in suggestions], n=1, cutoff=0.7)
-
-            if close_matches:
-                # If a close match is found, suggest it directly
-                suggested_movie = close_matches[0]
-                await update.message.reply_text(
-                    sanitize_unicode(f"😔 Movie not found. Did you mean **{suggested_movie.title()}**?\n{suggestion_text}"),
-                    parse_mode="Markdown"
-                )
-            else:
-                # Otherwise, list all suggestions
-                await update.message.reply_text(
-                    sanitize_unicode(f"😔 Movie not found. Here are some suggestions:\n{suggestion_text}"),
-                    parse_mode="Markdown"
-                )
+            await update.message.reply_text(
+                sanitize_unicode(f"😔 Movie not found. Did you mean:\n{suggestion_text}"),
+                parse_mode="Markdown"
+            )
         else:
             await update.message.reply_text(sanitize_unicode("🤷‍♂️ No suggestions available. Try a different term."))
-
     except Exception as e:
         logging.error(f"Error in suggesting movies: {sanitize_unicode(str(e))}")
         await update.message.reply_text(sanitize_unicode("❌ Error in generating suggestions."))
-
 
 async def welcome_new_member(update: Update, context: CallbackContext):
     """Welcome new members to the group."""
