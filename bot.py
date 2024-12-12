@@ -365,7 +365,7 @@ async def main():
         application.add_handler(MessageHandler(filters.PHOTO, add_movie))
         application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, search_movie))
         application.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, welcome_new_member))
-        application.add_handler(MessageHandler(filters.StatusUpdate.LEFT_CHAT_MEMBERS, goodbye_member))
+        application.add_handler(MessageHandler(filters.StatusUpdate.LEFT_CHAT_MEMBER, goodbye_member))
 
         delete_task = asyncio.create_task(delete_old_messages(application))
         await application.run_polling()
