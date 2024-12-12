@@ -340,6 +340,17 @@ async def delete_old_messages(application):
             logging.error(f"Error in delete_old_messages: {e}")
             await asyncio.sleep(10)
 
+async def cleanup_database(update: Update, context: CallbackContext):
+    """Remove old or unused movie entries from the database."""
+    try:
+        # Example: delete movies older than a certain date or with no media
+        collection.delete_many({"created_at": {"$lt": datetime.datetime.now() - datetime.timedelta(days=365)}})
+        await update.message.reply_text("🧹 Database cleaned up successfully.")
+    except Exception as e:
+        logging.error(f"Error during database cleanup: {e}")
+        await update.message.reply_text("❌ An error occurred during cleanup.")
+
+
 async def start_web_server():
     """Start a web server for health checks."""
     async def handle_health(request):
@@ -366,6 +377,8 @@ async def main():
         application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, search_movie))
         application.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, welcome_new_member))
         application.add_handler(MessageHandler(filters.StatusUpdate.LEFT_CHAT_MEMBER, goodbye_member))
+        application.add_handler(CommandHandler("cleanup", cleanup_database))
+
 
         delete_task = asyncio.create_task(delete_old_messages(application))
         await application.run_polling()
