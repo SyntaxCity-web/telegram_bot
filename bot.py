@@ -306,17 +306,14 @@ async def goodbye_member(update: Update, context: CallbackContext):
     user_name = sanitize_unicode(left_member.full_name or left_member.username or "Movie Enthusiast")
     
     goodbye_messages = [
-        f"🎬 Credits Roll: {user_name} Has Left the Chat 🍿\n"
-        "Our movie marathon won't be the same without you!\n"
-        "Hope your next screening is a blockbuster!",
-        
-        f"🎥 Final Scene: {user_name} Takes a Bow 👋\n"
-        "Sometimes the best characters exit before the end!\n"
-        "We'll keep your seat warm for a potential sequel.",
-        
-        f"📽️ Plot Twist: {user_name} Exits Stage Left 🚪\n"
-        "Not every movie has a happy ending, but every ending is a new beginning!\n"
-        "Farewell, our star performer!"
+       f"🎬 Breaking News: {user_name} has left the movie chat! 🍿\n"
+        "Our ratings just dropped, but the show must go on!",    
+            
+        f"📽️ {user_name} has exited the building! 🚪\n"
+        "Another plot twist in our cinematic journey...",
+            
+        f"🎥 Farewell, {user_name}! You've officially cut to black. 👋\n"
+        "Hope your next chat is a blockbuster!"
     ]
     
     # Randomly select a goodbye message
@@ -375,6 +372,7 @@ async def main():
         application.add_handler(MessageHandler(filters.PHOTO, add_movie))
         application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, search_movie))
         application.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, welcome_new_member))
+        application.add_handler(MessageHandler(filters.StatusUpdate.LEFT_CHAT_MEMBERS, goodbye_member))
 
         delete_task = asyncio.create_task(delete_old_messages(application))
         await application.run_polling()
