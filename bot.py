@@ -13,6 +13,7 @@ import nest_asyncio
 import difflib
 from aiohttp import web
 import uuid
+import random
 
 # Apply nest_asyncio for environments like Jupyter
 nest_asyncio.apply()
@@ -277,15 +278,51 @@ async def suggest_movies(update: Update, movie_name: str):
 
 
 async def welcome_new_member(update: Update, context: CallbackContext):
-    """Welcome new members to the group."""
+    """Welcome new members to the group with a cinematic flair."""
     for new_member in update.message.new_chat_members:
         user_name = sanitize_unicode(new_member.full_name or new_member.username or "Movie Fan")
-        welcome_text = (
-            f"Welcome, {user_name}! 🎬\n\n"
-            "Search for any movie by typing its title. Easy as that! 🍿\n"
-            "Enjoy exploring films with us! 🎥"
-        )
+        
+        welcome_messages = [
+            f"🎬 Fade in: {user_name} enters the scene! 🍿\n"
+            "Welcome to our movie lovers' blockbuster chat!\n"
+            "Your seat is ready, the popcorn's hot, let the show begin!",
+            
+            f"🎥 Starring... {user_name}! 🌟\n"
+            "Breaking into our movie chat with a grand entrance!\n"
+            "Plot twist: You're now part of the most epic film crew ever!",
+            
+            f"📽️ Director's Cut: Welcome, {user_name}! 🎞️\n"
+            "You've just been cast in the most exciting movie chat ensemble!\n"
+            "Your mission: Discover, discuss, and devour movies!"
+        ]
+        
+        # Randomly select a welcome message
+        welcome_text = random.choice(welcome_messages)    
         await update.message.reply_text(welcome_text)
+
+async def goodbye_member(update: Update, context: CallbackContext):
+    """Send a cinematic goodbye message when a member leaves the group."""
+    left_member = update.message.left_chat_member
+    user_name = sanitize_unicode(left_member.full_name or left_member.username or "Movie Enthusiast")
+    
+    goodbye_messages = [
+        f"🎬 Credits Roll: {user_name} Has Left the Chat 🍿\n"
+        "Our movie marathon won't be the same without you!\n"
+        "Hope your next screening is a blockbuster!",
+        
+        f"🎥 Final Scene: {user_name} Takes a Bow 👋\n"
+        "Sometimes the best characters exit before the end!\n"
+        "We'll keep your seat warm for a potential sequel.",
+        
+        f"📽️ Plot Twist: {user_name} Exits Stage Left 🚪\n"
+        "Not every movie has a happy ending, but every ending is a new beginning!\n"
+        "Farewell, our star performer!"
+    ]
+    
+    # Randomly select a goodbye message
+    goodbye_text = random.choice(goodbye_messages)   
+    await update.message.reply_text(goodbye_text)
+    
 
 async def delete_old_messages(application):
     """Delete messages in the search group that are older than 24 hours."""
