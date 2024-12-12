@@ -73,7 +73,6 @@ async def start(update: Update, context: CallbackContext):
         text=f"Hi {sanitize_unicode(user_name)}! 👋 Use me to search or upload movies. 🎥",
         reply_markup=reply_markup
     )
-
 # Temporary storage for incomplete movie uploads
 upload_sessions = {}
 
@@ -87,7 +86,6 @@ async def add_movie(update: Update, context: CallbackContext):
             sanitize_unicode("❌ You can only upload movies in the designated storage group. 🎥")
         )
         return
-
     user_id = update.effective_user.id
     session = upload_sessions[user_id]
     file_info = update.message.document
@@ -152,7 +150,6 @@ async def add_movie(update: Update, context: CallbackContext):
     # If neither file nor image is provided
     if not (file_info or image_info):
         await update.message.reply_text(sanitize_unicode("Please upload both a movie file and an image."))
-
 
 async def search_movie(update: Update, context: CallbackContext):
     """Search for a movie in the database."""
@@ -275,8 +272,6 @@ async def suggest_movies(update: Update, movie_name: str):
             )
         )
 
-
-
 async def welcome_new_member(update: Update, context: CallbackContext):
     """Welcome new members to the group with a cinematic flair."""
     for new_member in update.message.new_chat_members:
@@ -314,13 +309,11 @@ async def goodbye_member(update: Update, context: CallbackContext):
             
         f"🎥 Farewell, {user_name}! You've officially cut to black. 👋\n"
         "Hope your next chat is a blockbuster!"
-    ]
-    
+    ]    
     # Randomly select a goodbye message
     goodbye_text = random.choice(goodbye_messages)   
     await update.message.reply_text(goodbye_text)
     
-
 async def delete_old_messages(application):
     """Delete messages in the search group that are older than 24 hours."""
     while True:
