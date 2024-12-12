@@ -14,6 +14,8 @@ import difflib
 from aiohttp import web
 import uuid
 import random
+from pytz import timezone
+from datetime import datetime
 
 # Apply nest_asyncio for environments like Jupyter
 nest_asyncio.apply()
@@ -62,6 +64,36 @@ def sanitize_unicode(text):
     Sanitize Unicode text to remove invalid characters, such as surrogate pairs.
     """
     return text.encode('utf-8', 'ignore').decode('utf-8')
+
+
+
+
+
+
+class TimezoneFormatter(logging.Formatter):
+    def converter(self, timestamp):
+        # Set timezone to IST (Asia/Kolkata)
+        tz = timezone("Asia/Kolkata")
+        return datetime.fromtimestamp(timestamp, tz)
+
+    def formatTime(self, record, datefmt=None):
+        dt = self.converter(record.created)
+        if datefmt:
+            return dt.strftime(datefmt)
+        return dt.isoformat()
+
+# Configure logging
+logging.basicConfig(
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    level=logging.INFO
+)
+formatter = TimezoneFormatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+for handler in logging.getLogger().handlers:
+    handler.setFormatter(formatter)
+
+
+
+
 
 # Handlers
 async def start(update: Update, context: CallbackContext):
