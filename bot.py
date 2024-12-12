@@ -221,22 +221,59 @@ async def search_movie(update: Update, context: CallbackContext):
         )
 
 async def suggest_movies(update: Update, movie_name: str):
-    """Provide suggestions for movie names."""
+    """Provide humorous suggestions for movie names with structured error handling."""
     try:
+        # Helper function to validate the query length
+        def is_query_too_short(query):
+            return len(query) < 3
+
+        # Validate the input query
+        if is_query_too_short(movie_name):
+            await update.message.reply_text(
+                sanitize_unicode(
+                    "🧐 Are you trying to win at Scrabble or find a movie? Give me at least 3 letters!"
+                ),
+                parse_mode="Markdown"
+            )
+            return
+
+        # Fetch suggestions from the database
         suggestions = list(
             collection.find({"name": {"$regex": f".*{movie_name[:3]}.*", "$options": "i"}}).limit(5)
         )
+
+        # Format and send suggestions to the user
         if suggestions:
-            suggestion_text = "\n".join([sanitize_unicode(f"- {s['name']}") for s in suggestions])
+            suggestion_text = "\n".join([sanitize_unicode(f"- {s['name']} (the classic everyone forgot)") for s in suggestions])
             await update.message.reply_text(
-                sanitize_unicode(f"😔 Movie not found. Did you mean:\n{suggestion_text}"),
+                sanitize_unicode(
+                    f"🎥 No luck finding your movie, but here are some golden oldies you might like:\n{suggestion_text}"
+                ),
                 parse_mode="Markdown"
             )
         else:
-            await update.message.reply_text(sanitize_unicode("🤷‍♂️ No suggestions available. Try a different term."))
+            await update.message.reply_text(
+                sanitize_unicode(
+                    "🤔 I got nothing. Maybe you're trying to invent a new genre? Try a different term."
+                )
+            )
+
+    except pymongo.errors.PyMongoError as db_error:
+        logging.error(f"Database error in suggesting movies: {sanitize_unicode(str(db_error))}")
+        await update.message.reply_text(
+            sanitize_unicode(
+                "💾 Oops! Looks like our movie database tripped over its own wires. Try again later."
+            )
+        )
+
     except Exception as e:
-        logging.error(f"Error in suggesting movies: {sanitize_unicode(str(e))}")
-        await update.message.reply_text(sanitize_unicode("❌ Error in generating suggestions."))
+        logging.error(f"Unexpected error in suggesting movies: {sanitize_unicode(str(e))}")
+        await update.message.reply_text(
+            sanitize_unicode(
+                "😱 Something went wrong. Did you break the internet? Please try again later."
+            )
+        )
+
 
 
 async def welcome_new_member(update: Update, context: CallbackContext):
