@@ -274,6 +274,102 @@ async def search_movie(update: Update, context: CallbackContext):
         await update.message.reply_text(
             sanitize_unicode("❌ An unexpected error occurred. Please try again later.")
         )
+async def suggest_movies(update: Update, movie_name: str):
+    """Provide humorous suggestions for movie names with structured error handling."""
+    try:
+        # Helper function to validate the query length
+        def is_query_too_short(query):
+            return len(query) < 3
+
+        # Validate the input query
+        if is_query_too_short(movie_name):
+            await update.message.reply_text(
+                sanitize_unicode(
+                    "🧐 Are you trying to win at Scrabble or find a movie? Give me at least 3 letters!"
+                ),
+                parse_mode="Markdown"
+            )
+            return
+
+        # Fetch suggestions from the database
+        suggestions = list(
+            collection.find({"name": {"$regex": f".*{movie_name[:3]}.*", "$options": "i"}}).limit(5)
+        )
+
+        # Format and send suggestions to the user
+        if suggestions:
+            suggestion_text = "\n".join([sanitize_unicode(f"- {s['name']} (the classic everyone forgot)") for s in suggestions])
+            await update.message.reply_text(
+                sanitize_unicode(
+                    f"🎥 No luck finding your movie, but here are some golden oldies you might like:\n{suggestion_text}"
+                ),
+                parse_mode="Markdown"
+            )
+        else:
+            await update.message.reply_text(
+                sanitize_unicode(
+                    "🤔 I got nothing. Maybe you're trying to invent a new genre? Try a different term."
+                )
+            )
+
+    except pymongo.errors.PyMongoError as db_error:
+        logging.error(f"Database error in suggesting movies: {sanitize_unicode(str(db_error))}")
+        await update.message.reply_text(
+            sanitize_unicode(
+                "💾 Oops! Looks like our movie database tripped over its own wires. Try again later."
+            )
+        )
+
+    except Exception as e:
+        logging.error(f"Unexpected error in suggesting movies: {sanitize_unicode(str(e))}")
+        await update.message.reply_text(
+            sanitize_unicode(
+                "😱 Something went wrong. Did you break the internet? Please try again later."
+            )
+        )
+
+async def welcome_new_member(update: Update, context: CallbackContext):
+    """Welcome new members to the group with a cinematic flair."""
+    for new_member in update.message.new_chat_members:
+        user_name = sanitize_unicode(new_member.full_name or new_member.username or "Movie Fan")
+        
+        welcome_messages = [
+            f"🎬 Fade in: {user_name} enters the scene! 🍿\n"
+            "Welcome to our movie lovers' blockbuster chat!\n"
+            "Your seat is ready, the popcorn's hot, let the show begin!",
+            
+            f"🎥 Starring... {user_name}! 🌟\n"
+            "Breaking into our movie chat with a grand entrance!\n"
+            "Plot twist: You're now part of the most epic film crew ever!",
+            
+            f"📽️ Director's Cut: Welcome, {user_name}! 🎞️\n"
+            "You've just been cast in the most exciting movie chat ensemble!\n"
+            "Your mission: Discover, discuss, and devour movies!"
+        ]
+        
+        # Randomly select a welcome message
+        welcome_text = random.choice(welcome_messages)    
+        await update.message.reply_text(welcome_text)
+
+async def goodbye_member(update: Update, context: CallbackContext):
+    """Send a cinematic goodbye message when a member leaves the group."""
+    left_member = update.message.left_chat_member
+    user_name = sanitize_unicode(left_member.full_name or left_member.username or "Movie Enthusiast")
+    
+    goodbye_messages = [
+       f"🎬 Breaking News: {user_name} has left the movie chat! 🍿\n"
+        "Our ratings just dropped, but the show must go on!",    
+            
+        f"📽️ {user_name} has exited the building! 🚪\n"
+        "Another plot twist in our cinematic journey...",
+            
+        f"🎥 Farewell, {user_name}! You've officially cut to black. 👋\n"
+        "Hope your next chat is a blockbuster!"
+    ]    
+    # Randomly select a goodbye message
+    goodbye_text = random.choice(goodbye_messages)   
+    await update.message.reply_text(goodbye_text)
+
 
 # Rest of the code remains the same as in the previous implementation...
 
