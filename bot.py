@@ -33,6 +33,7 @@ class TimezoneFormatter(logging.Formatter):
 
 # Apply nest_asyncio for environments like Jupyter
 nest_asyncio.apply()
+
 # Load environment variables
 load_dotenv()
 
@@ -206,6 +207,8 @@ async def add_movie(update: Update, context: CallbackContext):
     if not (file_info or image_info):
         await update.message.reply_text(sanitize_unicode("❌ Please upload both a movie file and an image."))
 
+
+
 async def search_movie(update: Update, context: CallbackContext):
     """
     Search for a movie in the database and send preview to group.
@@ -274,11 +277,13 @@ async def search_movie(update: Update, context: CallbackContext):
         else:
             # Suggest similar movies or inform the user no results were found
             await suggest_movies(update, movie_name)
+
     except Exception as e:
         logging.error(f"Search error: {sanitize_unicode(str(e))}")
         await update.message.reply_text(
             sanitize_unicode("❌ An unexpected error occurred. Please try again later.")
-        )       
+        )
+        
 # New handler for retrieving movie files
 async def get_movie_files(update: Update, context: CallbackContext):
     """Send movie files to user via private message."""
@@ -298,6 +303,7 @@ async def get_movie_files(update: Update, context: CallbackContext):
                 sanitize_unicode(f"📤 Sending files for **{movie.get('name', 'Movie')}**"),
                 parse_mode="Markdown"
             )
+
             # Send each document related to the movie
             for doc in movie['media']['documents']:
                 document_file_id = doc.get('file_id')
@@ -311,7 +317,8 @@ async def get_movie_files(update: Update, context: CallbackContext):
                             caption=sanitize_unicode(f"🎥 {document_file_name}")
                         )
                     except Exception as e:
-                        logging.error(f"Error sending document: {sanitize_unicode(str(e))}")       
+                        logging.error(f"Error sending document: {sanitize_unicode(str(e))}")
+            
             # Optional: Send a completion message
             await query.message.reply_text(
                 sanitize_unicode("✅ All files have been sent!")
@@ -319,12 +326,14 @@ async def get_movie_files(update: Update, context: CallbackContext):
         else:
             await query.message.reply_text(
                 sanitize_unicode("❌ No files found for this movie.")
-            )  
+            )
+    
     except Exception as e:
         logging.error(f"Error fetching files for movie {movie_id}: {sanitize_unicode(str(e))}")
         await query.message.reply_text(
             sanitize_unicode("❌ An error occurred while fetching the movie files.")
         )
+
 
 async def start(update: Update, context: CallbackContext):
     """Handle the /start command with default features or deep link for movies."""
@@ -354,6 +363,7 @@ async def start(update: Update, context: CallbackContext):
                     )
                 except Exception as e:
                     logging.error(f"Error sending movie details: {sanitize_unicode(str(e))}")
+
             # Send movie files
             for doc in documents:
                 document_file_id = doc.get('file_id')
@@ -367,7 +377,9 @@ async def start(update: Update, context: CallbackContext):
                         )
                     except Exception as e:
                         logging.error(f"Error sending file: {sanitize_unicode(str(e))}")
+
             return
+
     # Default behavior when no movie_id is provided
     keyboard = [[InlineKeyboardButton("Add me to your chat! 🤖", url="https://t.me/+ERz0bGWEHHBmNTU9")]]
     reply_markup = InlineKeyboardMarkup(keyboard)
@@ -377,12 +389,15 @@ async def start(update: Update, context: CallbackContext):
         reply_markup=reply_markup
     )
 
+
+
 async def suggest_movies(update: Update, movie_name: str):
     """Provide humorous suggestions for movie names with structured error handling."""
     try:
         # Helper function to validate the query length
         def is_query_too_short(query):
             return len(query) < 3
+
         # Validate the input query
         if is_query_too_short(movie_name):
             await update.message.reply_text(
@@ -392,10 +407,12 @@ async def suggest_movies(update: Update, movie_name: str):
                 parse_mode="Markdown"
             )
             return
+
         # Fetch suggestions from the database
         suggestions = list(
             collection.find({"name": {"$regex": f".*{movie_name[:3]}.*", "$options": "i"}}).limit(5)
         )
+
         # Format and send suggestions to the user
         if suggestions:
             suggestion_text = "\n".join([sanitize_unicode(f"- {s['name']} (the classic everyone forgot)") for s in suggestions])
@@ -411,6 +428,7 @@ async def suggest_movies(update: Update, movie_name: str):
                     "🤔 I got nothing. Maybe you're trying to invent a new genre? Try a different term."
                 )
             )
+
     except pymongo.errors.PyMongoError as db_error:
         logging.error(f"Database error in suggesting movies: {sanitize_unicode(str(db_error))}")
         await update.message.reply_text(
@@ -418,6 +436,7 @@ async def suggest_movies(update: Update, movie_name: str):
                 "💾 Oops! Looks like our movie database tripped over its own wires. Try again later."
             )
         )
+
     except Exception as e:
         logging.error(f"Unexpected error in suggesting movies: {sanitize_unicode(str(e))}")
         await update.message.reply_text(
@@ -443,10 +462,13 @@ async def welcome_new_member(update: Update, context: CallbackContext):
             f"📽️ Director's Cut: Welcome, {user_name}! 🎞️\n"
             "You've just been cast in the most exciting movie chat ensemble!\n"
             "Your mission: Discover, discuss, and devour movies!"
-        ]        
+        ]
+        
         # Randomly select a welcome message
         welcome_text = random.choice(welcome_messages)    
         await update.message.reply_text(welcome_text)
+
+
 
 async def goodbye_member(update: Update, context: CallbackContext):
     """Send a cinematic goodbye message when a member leaves the group."""
@@ -467,6 +489,8 @@ async def goodbye_member(update: Update, context: CallbackContext):
     goodbye_text = random.choice(goodbye_messages)   
     await update.message.reply_text(goodbye_text)
 
+
+
 async def cleanup_database(update: Update, context: CallbackContext):
     """Remove old or unused movie entries from the database."""
     try:
@@ -476,6 +500,7 @@ async def cleanup_database(update: Update, context: CallbackContext):
     except Exception as e:
         logging.error(f"Error during database cleanup: {e}")
         await update.message.reply_text("❌ An error occurred during cleanup.")
+
 
 async def start_web_server():
     """Start a web server for health checks."""
@@ -508,6 +533,7 @@ async def main():
 
 
         await application.run_polling()
+
     except Exception as e:
         logging.error(f"Main loop error: {e}")
     finally:
