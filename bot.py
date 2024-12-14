@@ -207,8 +207,6 @@ async def add_movie(update: Update, context: CallbackContext):
     if not (file_info or image_info):
         await update.message.reply_text(sanitize_unicode("❌ Please upload both a movie file and an image."))
 
-
-
 async def search_movie(update: Update, context: CallbackContext):
     """
     Search for a movie in the database and send preview to group.
