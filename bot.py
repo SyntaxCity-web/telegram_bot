@@ -14,6 +14,7 @@ import nest_asyncio
 import uuid
 import random
 from aiohttp import web
+from telegram.ext import CallbackQueryHandler
 
 # Custom Timezone Formatter
 class TimezoneFormatter(logging.Formatter):
@@ -32,7 +33,6 @@ class TimezoneFormatter(logging.Formatter):
 
 # Apply nest_asyncio for environments like Jupyter
 nest_asyncio.apply()
-
 # Load environment variables
 load_dotenv()
 
@@ -91,17 +91,6 @@ def sanitize_unicode(text):
     """
     return text.encode('utf-8', 'ignore').decode('utf-8')
 
-# Handlers
-async def start(update: Update, context: CallbackContext):
-    """Handle the /start command."""
-    user_name = update.effective_user.full_name or "there"
-    keyboard = [[InlineKeyboardButton("Add me to your chat! 🤖", url="https://t.me/+ERz0bGWEHHBmNTU9")]]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    await update.message.reply_text(
-        text=f"Hi {sanitize_unicode(user_name)}! 👋 Use me to search or upload movies. 🎥",
-        reply_markup=reply_markup
-    )
-
 # Temporary storage for incomplete movie uploads
 upload_sessions = defaultdict(lambda: {'files': [], 'image': None, 'caption': None})
 
@@ -126,6 +115,7 @@ async def add_movie(update: Update, context: CallbackContext):
         # Updated pattern to clean the filename
         pattern = r'(?i)(?:\[.*?\]\s*|\s*-?\s*(HDRip|10bit|x264|AAC|\d{3,4}MB|AMZN|WEB-DL|WEBRip|HEVC|x265|ESub|HQ|\.mkv|\.mp4|\.avi|\.mov|BluRay|DVDRip|720p|1080p|540p|SD|HD|CAM|DVDScr|R5|TS|Rip|BRRip|AC3|DualAudio|6CH))'
         cleaned_name = re.sub(pattern, '', filename, flags=re.IGNORECASE).strip()
+
 
         # Extract only title, year, and language if possible
         match = re.search(r'^(.*?)(\(?\d{4}\)?)?(.*?Malayalam|Hindi|Tamil|Telugu|English)?$', cleaned_name, flags=re.IGNORECASE)
@@ -171,11 +161,42 @@ async def add_movie(update: Update, context: CallbackContext):
             await update.message.reply_text(sanitize_unicode(f"✅ Successfully added movie: {movie_name}"))
             
             if SEARCH_GROUP_ID:
-                await context.bot.send_message(
-                    chat_id=SEARCH_GROUP_ID,
-                    text=sanitize_unicode(f"New movie added: **{movie_name}**! 🎬\nCheck it out! 🍿")
-                )
-            
+                # Create deep link for the movie
+                deep_link = f"https://t.me/{context.bot.username}?start={movie_id}"
+                
+                # Prepare inline keyboard for downloading
+                keyboard = [
+                    [InlineKeyboardButton(
+                        "🎬 Download", 
+                        url=deep_link
+                    )],
+                ]
+                reply_markup = InlineKeyboardMarkup(keyboard)
+
+                # Send preview message to the search group
+                name = movie_entry.get('name', 'Unknown Movie')
+                media = movie_entry.get('media', {})
+                image_file_id = media.get('image', {}).get('file_id')
+
+                if image_file_id:
+                    try:
+                        await context.bot.send_photo(
+                            chat_id=SEARCH_GROUP_ID,
+                            photo=image_file_id,
+                            caption=sanitize_unicode(f"🎥 **{name}**"),
+                            parse_mode="Markdown",
+                            reply_markup=reply_markup
+                        )
+                    except Exception as e:
+                        logging.error(f"Error sending preview for {sanitize_unicode(name)}: {sanitize_unicode(str(e))}")
+                else:
+                    await context.bot.send_message(
+                        chat_id=SEARCH_GROUP_ID,
+                        text=sanitize_unicode(f"🎥 **{name}**"),
+                        parse_mode="Markdown",
+                        reply_markup=reply_markup
+                    )
+
             del upload_sessions[user_id]
         except Exception as e:
             logging.error(f"Database error: {str(e)}")
@@ -186,101 +207,182 @@ async def add_movie(update: Update, context: CallbackContext):
         await update.message.reply_text(sanitize_unicode("❌ Please upload both a movie file and an image."))
 
 async def search_movie(update: Update, context: CallbackContext):
-    """Search for a movie in the database."""
+    """
+    Search for a movie in the database and send preview to group.
+    Clicking the deep link opens the bot's PM, where the user can download files.
+    """
+    # Validate the command usage
     if update.effective_chat.id != SEARCH_GROUP_ID:
-        await update.message.reply_text(sanitize_unicode("❌ Use this feature in the designated search group."))
+        await update.message.reply_text(
+            sanitize_unicode("❌ Use this feature in the designated search group.")
+        )
         return
 
+    # Get the movie name from the user's message
     movie_name = sanitize_unicode(update.message.text.strip())
     if not movie_name:
-        await update.message.reply_text(sanitize_unicode("🚨 Provide a movie name to search. Use /search <movie_name>"))
+        await update.message.reply_text(
+            sanitize_unicode("🚨 Provide a movie name to search. Use /search <movie_name>")
+        )
         return
 
     try:
-        # Search in the database
+        # Search for the movie in the database
         regex_pattern = re.compile(re.escape(movie_name), re.IGNORECASE)
         results = list(collection.find({"name": {"$regex": regex_pattern}}).limit(10))
 
         if results:
-            sent_message = await update.message.reply_text(
-                sanitize_unicode(f"🔍 **Found {len(results)} result(s) for '{movie_name}':**"),
-                parse_mode="Markdown"
-            )
-            
-            # Track the sent message for potential deletion
-            search_group_messages.append({
-                "message_id": sent_message.message_id,
-                "chat_id": update.effective_chat.id,
-                "time": datetime.datetime.now(datetime.timezone.utc)
-            })
-            
+            # Send preview messages for each movie result
             for result in results:
                 name = result.get('name', 'Unknown Movie')
                 media = result.get('media', {})
-
-                # Get image and document file info
                 image_file_id = media.get('image', {}).get('file_id')
-                document_files = media.get('documents', [])
 
-                # If both image and document are found
-                if image_file_id and document_files:
-                    # Send the image first
+                # Generate a direct deep link for bot PM with the movie ID
+                deep_link = f"https://t.me/{context.bot.username}?start={result['movie_id']}"
+
+                # Create an inline keyboard for the deep link
+                keyboard = [
+                    [InlineKeyboardButton(
+                        "🎬 Download", 
+                        url=deep_link
+                    )],
+                ]
+                reply_markup = InlineKeyboardMarkup(keyboard)
+
+                # Send movie preview with an image if available
+                if image_file_id:
                     try:
-                        image_message = await context.bot.send_photo(
+                        await context.bot.send_photo(
                             chat_id=update.effective_chat.id,
                             photo=image_file_id,
                             caption=sanitize_unicode(f"🎥 **{name}**"),
-                            parse_mode="Markdown"
+                            parse_mode="Markdown",
+                            reply_markup=reply_markup
                         )
-                        search_group_messages.append({
-                            "message_id": image_message.message_id,
-                            "chat_id": update.effective_chat.id,
-                            "time": datetime.datetime.now(datetime.timezone.utc)
-                        })
-                        
-                        # Send each document related to the movie
-                        for doc in document_files:
-                            document_file_id = doc.get('file_id')
-                            document_file_name = doc.get('file_name')
-                            if document_file_id:
-                                doc_message = await context.bot.send_document(
-                                    chat_id=update.effective_chat.id,
-                                    document=document_file_id,
-                                    parse_mode="Markdown"
-                                )
-                                search_group_messages.append({
-                                    "message_id": doc_message.message_id,
-                                    "chat_id": update.effective_chat.id,
-                                    "time": datetime.datetime.now(datetime.timezone.utc)
-                                })
                     except Exception as e:
-                        logging.error(f"Error sending media for {sanitize_unicode(name)}: {sanitize_unicode(str(e))}")
+                        logging.error(
+                            f"Error sending preview for {sanitize_unicode(name)}: {sanitize_unicode(str(e))}"
+                        )
                 else:
-                    # If no image or document is found, just send a text message
-                    text_message = await update.message.reply_text(
-                        sanitize_unicode(f"🎥 **{name}** (media missing)"),
-                        parse_mode="Markdown"
+                    # If no image is available, send a text preview
+                    await update.message.reply_text(
+                        sanitize_unicode(f"🎥 **{name}**"),
+                        parse_mode="Markdown",
+                        reply_markup=reply_markup
                     )
-                    search_group_messages.append({
-                        "message_id": text_message.message_id,
-                        "chat_id": update.effective_chat.id,
-                        "time": datetime.datetime.now(datetime.timezone.utc)
-                    })
         else:
+            # Suggest similar movies or inform the user no results were found
             await suggest_movies(update, movie_name)
-
     except Exception as e:
         logging.error(f"Search error: {sanitize_unicode(str(e))}")
         await update.message.reply_text(
             sanitize_unicode("❌ An unexpected error occurred. Please try again later.")
+        )       
+# New handler for retrieving movie files
+async def get_movie_files(update: Update, context: CallbackContext):
+    """Send movie files to user via private message."""
+    query = update.callback_query
+    await query.answer()
+
+    # Extract movie ID from callback data
+    movie_id = query.data.split('_')[1]
+
+    try:
+        # Fetch movie details from database
+        movie = collection.find_one({"movie_id": movie_id})
+        
+        if movie and 'media' in movie and 'documents' in movie['media']:
+            # Send a message to the user
+            await query.message.reply_text(
+                sanitize_unicode(f"📤 Sending files for **{movie.get('name', 'Movie')}**"),
+                parse_mode="Markdown"
+            )
+            # Send each document related to the movie
+            for doc in movie['media']['documents']:
+                document_file_id = doc.get('file_id')
+                document_file_name = doc.get('file_name', 'movie_file')
+                
+                if document_file_id:
+                    try:
+                        await context.bot.send_document(
+                            chat_id=query.from_user.id,
+                            document=document_file_id,
+                            caption=sanitize_unicode(f"🎥 {document_file_name}")
+                        )
+                    except Exception as e:
+                        logging.error(f"Error sending document: {sanitize_unicode(str(e))}")       
+            # Optional: Send a completion message
+            await query.message.reply_text(
+                sanitize_unicode("✅ All files have been sent!")
+            )
+        else:
+            await query.message.reply_text(
+                sanitize_unicode("❌ No files found for this movie.")
+            )  
+    except Exception as e:
+        logging.error(f"Error fetching files for movie {movie_id}: {sanitize_unicode(str(e))}")
+        await query.message.reply_text(
+            sanitize_unicode("❌ An error occurred while fetching the movie files.")
         )
+
+async def start(update: Update, context: CallbackContext):
+    """Handle the /start command with default features or deep link for movies."""
+    user_name = update.effective_user.full_name or "there"
+    args = context.args
+
+    if args and len(args) > 0:
+        # Deep link with movie_id
+        movie_id = args[0]
+        
+        # Fetch movie details from database
+        movie = collection.find_one({"movie_id": movie_id})
+        
+        if movie:
+            name = movie.get('name', 'Unknown Movie')
+            media = movie.get('media', {})
+            image_file_id = media.get('image', {}).get('file_id')
+            documents = media.get('documents', [])
+
+            # Send image preview if available
+            if image_file_id:
+                try:
+                    await update.message.reply_photo(
+                        photo=image_file_id,
+                        caption=sanitize_unicode(f"🎥 **{name}**\n\nFiles available: {len(documents)}"),
+                        parse_mode="Markdown"
+                    )
+                except Exception as e:
+                    logging.error(f"Error sending movie details: {sanitize_unicode(str(e))}")
+            # Send movie files
+            for doc in documents:
+                document_file_id = doc.get('file_id')
+                document_file_name = doc.get('file_name', 'movie_file')
+                if document_file_id:
+                    try:
+                        await context.bot.send_document(
+                            chat_id=update.effective_chat.id,
+                            document=document_file_id,
+                            caption=sanitize_unicode(f"🎬 {document_file_name}")
+                        )
+                    except Exception as e:
+                        logging.error(f"Error sending file: {sanitize_unicode(str(e))}")
+            return
+    # Default behavior when no movie_id is provided
+    keyboard = [[InlineKeyboardButton("Add me to your chat! 🤖", url="https://t.me/+ERz0bGWEHHBmNTU9")]]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    await update.message.reply_text(
+        text=f"Hi {sanitize_unicode(user_name)}! 👋 Use me to search. 🎥",
+        reply_markup=reply_markup
+    )
+
 async def suggest_movies(update: Update, movie_name: str):
     """Provide humorous suggestions for movie names with structured error handling."""
     try:
         # Helper function to validate the query length
         def is_query_too_short(query):
             return len(query) < 3
-
         # Validate the input query
         if is_query_too_short(movie_name):
             await update.message.reply_text(
@@ -290,12 +392,10 @@ async def suggest_movies(update: Update, movie_name: str):
                 parse_mode="Markdown"
             )
             return
-
         # Fetch suggestions from the database
         suggestions = list(
             collection.find({"name": {"$regex": f".*{movie_name[:3]}.*", "$options": "i"}}).limit(5)
         )
-
         # Format and send suggestions to the user
         if suggestions:
             suggestion_text = "\n".join([sanitize_unicode(f"- {s['name']} (the classic everyone forgot)") for s in suggestions])
@@ -311,7 +411,6 @@ async def suggest_movies(update: Update, movie_name: str):
                     "🤔 I got nothing. Maybe you're trying to invent a new genre? Try a different term."
                 )
             )
-
     except pymongo.errors.PyMongoError as db_error:
         logging.error(f"Database error in suggesting movies: {sanitize_unicode(str(db_error))}")
         await update.message.reply_text(
@@ -319,7 +418,6 @@ async def suggest_movies(update: Update, movie_name: str):
                 "💾 Oops! Looks like our movie database tripped over its own wires. Try again later."
             )
         )
-
     except Exception as e:
         logging.error(f"Unexpected error in suggesting movies: {sanitize_unicode(str(e))}")
         await update.message.reply_text(
@@ -345,8 +443,7 @@ async def welcome_new_member(update: Update, context: CallbackContext):
             f"📽️ Director's Cut: Welcome, {user_name}! 🎞️\n"
             "You've just been cast in the most exciting movie chat ensemble!\n"
             "Your mission: Discover, discuss, and devour movies!"
-        ]
-        
+        ]        
         # Randomly select a welcome message
         welcome_text = random.choice(welcome_messages)    
         await update.message.reply_text(welcome_text)
@@ -370,35 +467,6 @@ async def goodbye_member(update: Update, context: CallbackContext):
     goodbye_text = random.choice(goodbye_messages)   
     await update.message.reply_text(goodbye_text)
 
-
-# Rest of the code remains the same as in the previous implementation...
-
-async def delete_old_messages(application):
-    """Delete messages in the search group that are older than 24 hours."""
-    while True:
-        try:
-            # Use timezone-aware current time
-            now = datetime.datetime.now(datetime.timezone.utc)
-            threshold_seconds = 86400  # 24 hours
-            
-            messages_to_check = search_group_messages.copy()
-            
-            for message in messages_to_check:
-                if (now - message["time"]).total_seconds() > threshold_seconds:
-                    try:
-                        await application.bot.delete_message(
-                            chat_id=message["chat_id"], 
-                            message_id=message["message_id"]
-                        )
-                        search_group_messages.remove(message)
-                    except Exception as e:
-                        logging.warning(f"Failed to delete message: {e}")
-            
-            await asyncio.sleep(3600)
-        except Exception as e:
-            logging.error(f"Error in delete_old_messages: {e}")
-            await asyncio.sleep(10)
-
 async def cleanup_database(update: Update, context: CallbackContext):
     """Remove old or unused movie entries from the database."""
     try:
@@ -408,7 +476,6 @@ async def cleanup_database(update: Update, context: CallbackContext):
     except Exception as e:
         logging.error(f"Error during database cleanup: {e}")
         await update.message.reply_text("❌ An error occurred during cleanup.")
-
 
 async def start_web_server():
     """Start a web server for health checks."""
@@ -437,11 +504,10 @@ async def main():
         application.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, welcome_new_member))
         application.add_handler(MessageHandler(filters.StatusUpdate.LEFT_CHAT_MEMBER, goodbye_member))
         application.add_handler(CommandHandler("cleanup", cleanup_database))
+        application.add_handler(CallbackQueryHandler(get_movie_files))
 
 
-        delete_task = asyncio.create_task(delete_old_messages(application))
         await application.run_polling()
-
     except Exception as e:
         logging.error(f"Main loop error: {e}")
     finally:
