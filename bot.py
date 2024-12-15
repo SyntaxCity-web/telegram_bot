@@ -108,7 +108,7 @@ async def add_movie(update: Update, context: CallbackContext):
         # Replace underscores with spaces
         filename = filename.replace('_', ' ')
         
-        pattern = r'(?i)(?:\[.*?\]\s*|\s*-?\s*(HDRip|10bit|x264|AAC|\d{3,4}MB|AMZN|WEB-DL|WEBRip|HEVC|x265|ESub|HQ|\.mkv|\.mp4|\.avi|\.mov|BluRay|DVDRip|720p|1080p|540p|SD|HD|CAM|DVDScr|R5|TS|Rip|BRRip|AC3|DualAudio|6CH|v\d+))'
+        pattern = r'(?i)(?:\[.*?\]\s*|\s*-?\s*(HDRip|10bit|x264|AAC|\d{3,4}MB|AMZN|WEB-DL|WEBRip|HEVC|250M|x265|ESub|HQ|\.mkv|\.mp4|\.avi|\.mov|BluRay|DVDRip|720p|1080p|540p|SD|HD|CAM|DVDScr|R5|TS|Rip|BRRip|AC3|DualAudio|6CH|v\d+))'
         cleaned_name = re.sub(pattern, '', filename, flags=re.IGNORECASE).strip()
 
         match = re.search(r'^(.*?)(\(?\d{4}\)?)?(.*?Malayalam|Hindi|Tamil|Telugu|English)?$', cleaned_name, flags=re.IGNORECASE)
