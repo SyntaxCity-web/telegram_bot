@@ -452,59 +452,6 @@ async def suggest_movies(update: Update, movie_name: str):
             )
         )
 
-# The funny welcome message function
-async def welcome_new_member(update: Update, context: CallbackContext):
-    """Welcome new members to the group with a cinematic flair."""
-    for new_member in update.message.new_chat_members:
-        user_name = sanitize_unicode(new_member.full_name or new_member.username or "Movie Fan")
-        
-        welcome_messages = [
-            "🎉 Welcome, {name}! We've been waiting for you... all day! 🕒",
-            "👋 Oh hi there, {name}! Quick, what's your favorite movie? 🎥",
-            "🌟 Look who's here – it's {name}! You're the main character now. 🎬",
-            "🥳 Welcome aboard, {name}! Don't forget to tip your admins. 💸",
-            "😎 {name} just joined the coolest group on Telegram. Lucky us! 🍿",
-            "🚀 Welcome, {name}! Grab a seat, the movie's about to start. 🎞️",
-            "🐾 Hey {name}, no popcorn fights in the chat, okay? 🍿✨",
-            "🎭 {name}, you’ve entered the drama zone! Keep your sense of humor intact. 😂",
-            "👾 Welcome, {name}! Resistance is futile. You will be assimilated. 🤖",
-            "📜 Hello {name}! Did you bring your certificate of awesomeness? No? That’s okay! 🙃"
-        ]
-        
-        # Randomly select a welcome message and format it with the user's name
-        welcome_text = random.choice(welcome_messages).format(name=user_name)    
-        await update.message.reply_text(welcome_text)
-
-
-# The funny goodbye message function
-async def goodbye_member(update: Update, context: CallbackContext):
-    # Check if it's a member leaving
-    left_member = update.message.left_chat_member
-    
-    if left_member:
-        # Define some funny goodbye lines
-        funny_goodbye_lines = [
-            "👋 Oh no, {name}! We'll miss you like Netflix misses chill. 😢",
-            "🚪 {name} just walked out. Who left the door open?! 🫣",
-            "🌟 Goodbye, {name}! May the memes be with you. Always. 🌌",
-            "🛸 {name} has left the chat. Abducted by aliens, perhaps? 👽",
-            "🍕 Farewell, {name}! Now who's going to eat the leftover pizza? 🍕😭",
-            "🎭 Adieu, {name}! The drama level just dropped by 10%. 🎉",
-            "🏴‍☠️ {name} abandoned ship! Quick, patch the sails! 🚢",
-            "🌈 So long, {name}! Hope your Wi-Fi stays strong wherever you go. 📶",
-            "🎩 {name} vanished into thin air! Anyone seen the magic wand? 🪄",
-            "👻 Bye, {name}! We'll tell ghost stories about you in the group. 🕯️",
-        ]
-        
-        # Get the name of the member who left
-        user_name = sanitize_unicode(left_member.full_name or left_member.username or "Mysterious Stranger")
-    
-        # Choose a random funny goodbye line
-        goodbye_message = random.choice(funny_goodbye_lines).format(name=user_name)
-        
-        # Send the goodbye message
-        await update.message.reply_text(goodbye_message)
-
 async def cleanup_database(update: Update, context: CallbackContext):
     """Remove old or unused movie entries from the database."""
     try:
@@ -540,8 +487,6 @@ async def main():
         application.add_handler(MessageHandler(filters.Document.ALL, add_movie))
         application.add_handler(MessageHandler(filters.PHOTO, add_movie))
         application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, search_movie))
-        application.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, welcome_new_member))
-        application.add_handler(MessageHandler(filters.StatusUpdate.LEFT_CHAT_MEMBER, goodbye_member))
         application.add_handler(CommandHandler("cleanup", cleanup_database))
         application.add_handler(CallbackQueryHandler(get_movie_files))
 
