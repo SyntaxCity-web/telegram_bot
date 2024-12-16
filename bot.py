@@ -459,21 +459,22 @@ async def welcome_new_member(update: Update, context: CallbackContext):
         user_name = sanitize_unicode(new_member.full_name or new_member.username or "Movie Fan")
         
         welcome_messages = [
-        "🎉 Welcome, {name}! We've been waiting for you... all day! 🕒",
-        "👋 Oh hi there, {name}! Quick, what's your favorite movie? 🎥",
-        "🌟 Look who's here – it's {name}! You're the main character now. 🎬",
-        "🥳 Welcome aboard, {name}! Don't forget to tip your admins. 💸",
-        "😎 {name} just joined the coolest group on Telegram. Lucky us! 🍿",
-        "🚀 Welcome, {name}! Grab a seat, the movie's about to start. 🎞️",
-        "🐾 Hey {name}, no popcorn fights in the chat, okay? 🍿✨",
-        "🎭 {name}, you’ve entered the drama zone! Keep your sense of humor intact. 😂",
-        "👾 Welcome, {name}! Resistance is futile. You will be assimilated. 🤖",
-        "📜 Hello {name}! Did you bring your certificate of awesomeness? No? That’s okay! 🙃"
+            "🎉 Welcome, {name}! We've been waiting for you... all day! 🕒",
+            "👋 Oh hi there, {name}! Quick, what's your favorite movie? 🎥",
+            "🌟 Look who's here – it's {name}! You're the main character now. 🎬",
+            "🥳 Welcome aboard, {name}! Don't forget to tip your admins. 💸",
+            "😎 {name} just joined the coolest group on Telegram. Lucky us! 🍿",
+            "🚀 Welcome, {name}! Grab a seat, the movie's about to start. 🎞️",
+            "🐾 Hey {name}, no popcorn fights in the chat, okay? 🍿✨",
+            "🎭 {name}, you’ve entered the drama zone! Keep your sense of humor intact. 😂",
+            "👾 Welcome, {name}! Resistance is futile. You will be assimilated. 🤖",
+            "📜 Hello {name}! Did you bring your certificate of awesomeness? No? That’s okay! 🙃"
         ]
         
-        # Randomly select a welcome message
-        welcome_text = random.choice(welcome_messages)    
+        # Randomly select a welcome message and format it with the user's name
+        welcome_text = random.choice(welcome_messages).format(name=user_name)    
         await update.message.reply_text(welcome_text)
+
 
 # The funny goodbye message function
 async def goodbye_member(update: Update, context: CallbackContext):
