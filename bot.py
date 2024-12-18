@@ -382,8 +382,7 @@ async def start(update: Update, context: CallbackContext):
                     try:
                         await context.bot.send_document(
                             chat_id=update.effective_chat.id,
-                            document=document_file_id,
-                            caption=sanitize_unicode(f"🎬 {document_file_name}")
+                            document=document_file_id
                         )
                     except Exception as e:
                         logging.error(f"Error sending file: {sanitize_unicode(str(e))}")
@@ -398,60 +397,6 @@ async def start(update: Update, context: CallbackContext):
         reply_markup=reply_markup
     )
 
-async def suggest_movies(update: Update, movie_name: str):
-    """Provide humorous suggestions for movie names with structured error handling."""
-    try:
-        # Helper function to validate the query length
-        def is_query_too_short(query):
-            return len(query) < 3
-
-        # Validate the input query
-        if is_query_too_short(movie_name):
-            await update.message.reply_text(
-                sanitize_unicode(
-                    "🧐 Are you trying to win at Scrabble or find a movie? Give me at least 3 letters!"
-                ),
-                parse_mode="Markdown"
-            )
-            return
-
-        # Fetch suggestions from the database
-        suggestions = list(
-            collection.find({"name": {"$regex": f".*{movie_name[:3]}.*", "$options": "i"}}).limit(5)
-        )
-
-        # Format and send suggestions to the user
-        if suggestions:
-            suggestion_text = "\n".join([sanitize_unicode(f"- {s['name']} (the classic everyone forgot)") for s in suggestions])
-            await update.message.reply_text(
-                sanitize_unicode(
-                    f"🎥 No luck finding your movie, but here are some golden oldies you might like:\n{suggestion_text}"
-                ),
-                parse_mode="Markdown"
-            )
-        else:
-            await update.message.reply_text(
-                sanitize_unicode(
-                    "🤔 I got nothing. Maybe you're trying to invent a new genre? Try a different term."
-                )
-            )
-
-    except pymongo.errors.PyMongoError as db_error:
-        logging.error(f"Database error in suggesting movies: {sanitize_unicode(str(db_error))}")
-        await update.message.reply_text(
-            sanitize_unicode(
-                "💾 Oops! Looks like our movie database tripped over its own wires. Try again later."
-            )
-        )
-
-    except Exception as e:
-        logging.error(f"Unexpected error in suggesting movies: {sanitize_unicode(str(e))}")
-        await update.message.reply_text(
-            sanitize_unicode(
-                "😱 Something went wrong. Did you break the internet? Please try again later."
-            )
-        )
-
 async def cleanup_database(update: Update, context: CallbackContext):
     """Remove old or unused movie entries from the database."""
     try:
@@ -461,6 +406,21 @@ async def cleanup_database(update: Update, context: CallbackContext):
     except Exception as e:
         logging.error(f"Error during database cleanup: {e}")
         await update.message.reply_text("❌ An error occurred during cleanup.")
+
+# Define the /id command handler
+async def id_command(update: Update, context: CallbackContext):
+    """Respond with the user's ID and the group ID."""
+    user_id = update.effective_user.id  # Get the user's ID
+    chat_id = update.effective_chat.id  # Get the group/chat ID
+
+    # Construct the response
+    response = (
+        f"👤 Your ID: {user_id}\n"
+        f"💬 Group ID: {chat_id}"
+    )
+
+    # Send the response back to the user
+    await update.message.reply_text(response)
 
 
 async def start_web_server():
@@ -489,6 +449,7 @@ async def main():
         application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, search_movie))
         application.add_handler(CommandHandler("cleanup", cleanup_database))
         application.add_handler(CallbackQueryHandler(get_movie_files))
+        application.add_handler(CommandHandler("id", id_command))
 
 
         await application.run_polling()
