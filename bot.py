@@ -92,7 +92,6 @@ def sanitize_unicode(text):
     """
     return text.encode('utf-8', 'ignore').decode('utf-8')
 
-
 # Temporary storage for incomplete movie uploads
 upload_sessions = defaultdict(lambda: {'files': [], 'image': None, 'caption': None})
 
@@ -104,17 +103,21 @@ async def add_movie(update: Update, context: CallbackContext):
         
         # Remove emojis
         filename = re.sub(r'[^\x00-\x7F]+', '', filename)
-    
-        # Replace underscores with spaces
+
+        # Replace underscores and dots (not in extensions) with spaces
+        filename = re.sub(r'(?<!\.\w{3})\.', ' ', filename)
         filename = filename.replace('_', ' ')
         
-        pattern = r'(?i)(?:\[.*?\]\s*|\s*-?\s*(HDRip|10bit|x264|AAC|\d{3,4}MB|AMZN|WEB-DL|WEBRip|HEVC|250M|x265|ESub|HQ|\.mkv|\.mp4|\.avi|\.mov|BluRay|DVDRip|720p|1080p|540p|SD|HD|CAM|DVDScr|R5|TS|Rip|BRRip|AC3|DualAudio|6CH|v\d+))'
+        pattern = (r'(?i)(?:\[.*?\]\s*|\s*-?\s*(HDRip|10bit|x264|AAC|\d{3,4}MB|AMZN|WEB-DL|WEBRip|HEVC|250M|'
+               r'x265|ESub|HQ|\.mkv|\.mp4|\.avi|\.mov|BluRay|DVDRip|720p|1080p|540p|480p|SD|HD|CAM|DVDScr|R5|'
+               r'TS|Rip|BRRip|AC3|DualAudio|6CH|v\d+))')
         cleaned_name = re.sub(pattern, '', filename, flags=re.IGNORECASE).strip()
-
-        match = re.search(r'^(.*?)(\(?\d{4}\)?)?(.*?Malayalam|Hindi|Tamil|Telugu|English)?$', cleaned_name, flags=re.IGNORECASE)
         
+        match = re.search(r'^(.*?)(\(?\d{4}\)?)?(.*?Malayalam|Hindi|Tamil|Telugu|English)?$', cleaned_name, flags=re.IGNORECASE)
         if match:
             cleaned_name = ' '.join(part.strip() for part in match.groups() if part)
+            
+        # Remove extra spaces
         return re.sub(r'\s+', ' ', cleaned_name).strip()
 
     async def process_movie_file(file_info, session, caption):
@@ -219,8 +222,7 @@ async def add_movie(update: Update, context: CallbackContext):
 
     elif not (file_info or image_info):
         await update.message.reply_text(sanitize_unicode("❌ Please upload both a movie file and an image."))
-        
-        
+               
 async def search_movie(update: Update, context: CallbackContext):
     """
     Search for a movie in the database and send preview to group.
@@ -232,7 +234,6 @@ async def search_movie(update: Update, context: CallbackContext):
             sanitize_unicode("❌ Use this feature in the designated search group.")
         )
         return
-
     # Get the movie name from the user's message
     movie_name = sanitize_unicode(update.message.text.strip())
     if not movie_name:
@@ -397,16 +398,6 @@ async def start(update: Update, context: CallbackContext):
         reply_markup=reply_markup
     )
 
-async def cleanup_database(update: Update, context: CallbackContext):
-    """Remove old or unused movie entries from the database."""
-    try:
-        # Example: delete movies older than a certain date or with no media
-        collection.delete_many({"created_at": {"$lt": datetime.datetime.now() - datetime.timedelta(days=365)}})
-        await update.message.reply_text("🧹 Database cleaned up successfully.")
-    except Exception as e:
-        logging.error(f"Error during database cleanup: {e}")
-        await update.message.reply_text("❌ An error occurred during cleanup.")
-
 # Define the /id command handler
 async def id_command(update: Update, context: CallbackContext):
     """Respond with the user's ID and the group ID."""
@@ -421,7 +412,6 @@ async def id_command(update: Update, context: CallbackContext):
 
     # Send the response back to the user
     await update.message.reply_text(response)
-
 
 async def start_web_server():
     """Start a web server for health checks."""
@@ -447,10 +437,8 @@ async def main():
         application.add_handler(MessageHandler(filters.Document.ALL, add_movie))
         application.add_handler(MessageHandler(filters.PHOTO, add_movie))
         application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, search_movie))
-        application.add_handler(CommandHandler("cleanup", cleanup_database))
         application.add_handler(CallbackQueryHandler(get_movie_files))
         application.add_handler(CommandHandler("id", id_command))
-
 
         await application.run_polling()
     except Exception as e:
