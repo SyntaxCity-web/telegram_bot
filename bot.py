@@ -99,27 +99,28 @@ async def add_movie(update: Update, context: CallbackContext):
     """Process movie uploads, cleaning filenames and managing sessions."""
     
     def clean_filename(filename):
-    """Clean the uploaded filename by removing unnecessary tags."""
-    # Remove emojis and non-ASCII characters
-    filename = re.sub(r'[^\x00-\x7F]+', '', filename)
+        """Clean the uploaded filename by removing unnecessary tags."""
+        
+        # Remove emojis
+        filename = re.sub(r'[^\x00-\x7F]+', '', filename)
 
-    # Replace underscores with spaces
-    filename = filename.replace('_', ' ')
+        # Replace underscores with spaces
+        filename = filename.replace('_', ' ')
+        
+        # Remove unwanted tags
+        pattern = r'(?i)(?:\[.*?\]\s*|\s*-?\s*(HDRip|10bit|x264|AAC|\d{3,4}MB|AMZN|WEB-DL|WEBRip|HEVC|250M|x265|ESub|HQ|\.mkv|\.mp4|\.avi|\.mov|BluRay|DVDRip|720p|1080p|540p|SD|HD|CAM|DVDScr|R5|TS|Rip|BRRip|AC3|DualAudio|6CH|v\d+))'
+        cleaned_name = re.sub(pattern, '', filename, flags=re.IGNORECASE).strip()
+        
+        # Extract movie name, year, and language
+        match = re.search(r'^(.*?)(\(?\d{4}\)?)(.*?Tamil|Malayalam|Hindi|Telugu|English)?$', cleaned_name, flags=re.IGNORECASE)
 
-    # Remove unwanted tags
-    pattern = r'(?i)(?:\[.*?\]\s*|\s*-?\s*(HDRip|10bit|x264|AAC|\d{3,4}MB|AMZN|WEB-DL|WEBRip|HEVC|250M|x265|ESub|HQ|\.mkv|\.mp4|\.avi|\.mov|BluRay|DVDRip|720p|1080p|540p|SD|HD|CAM|DVDScr|R5|TS|Rip|BRRip|AC3|DualAudio|6CH|v\d+))'
-    cleaned_name = re.sub(pattern, '', filename, flags=re.IGNORECASE).strip()
-
-    # Extract movie name, year, and language
-    match = re.search(r'^(.*?)(\(?\d{4}\)?)(.*?Tamil|Malayalam|Hindi|Telugu|English)?$', cleaned_name, flags=re.IGNORECASE)
-
-    if match:
-        # Concatenate parts with proper spacing
-        parts = [part.strip() for part in match.groups() if part]
-        cleaned_name = ' '.join(parts)
-
-    # Remove multiple spaces if any
-    return re.sub(r'\s+', ' ', cleaned_name).strip()
+        if match:
+            # Concatenate parts with proper spacing
+            parts = [part.strip() for part in match.groups() if part]
+            cleaned_name = ' '.join(parts)
+            
+        # Remove multiple spaces if any
+        return re.sub(r'\s+', ' ', cleaned_name).strip()
 
     async def process_movie_file(file_info, session, caption):
         """Handle the movie file upload."""
