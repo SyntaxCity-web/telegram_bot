@@ -99,28 +99,31 @@ async def add_movie(update: Update, context: CallbackContext):
     """Process movie uploads, cleaning filenames and managing sessions."""
     
     def clean_filename(filename):
-        """Clean the uploaded filename by removing unnecessary tags."""
-        
-        # Remove emojis
+       """Clean the uploaded filename by removing unnecessary tags and extracting relevant details."""
+        # Remove emojis and special characters
         filename = re.sub(r'[^\x00-\x7F]+', '', filename)
 
         # Replace underscores with spaces
         filename = filename.replace('_', ' ')
-        
+
         # Remove unwanted tags
-        pattern = r'(?i)(?:\[.*?\]\s*|\s*-?\s*(HDRip|10bit|x264|AAC|\d{3,4}MB|AMZN|WEB-DL|WEBRip|HEVC|250M|x265|ESub|HQ|\.mkv|\.mp4|\.avi|\.mov|BluRay|DVDRip|720p|1080p|540p|SD|HD|CAM|DVDScr|R5|TS|Rip|BRRip|AC3|DualAudio|6CH|v\d+))'
-        cleaned_name = re.sub(pattern, '', filename, flags=re.IGNORECASE).strip()
-        
+        pattern = r'(?i)(HDRip|10bit|x264|AAC|\d{3,4}MB|AMZN|WEB-DL|WEBRip|HEVC|250M|x265|ESub|HQ|\.mkv|\.mp4|\.avi|\.mov|BluRay|DVDRip|720p|1080p|540p|SD|HD|CAM|DVDScr|R5|TS|Rip|BRRip|AC3|DualAudio|6CH|v\d+)'
+        filename = re.sub(pattern, '', filename).strip()
+
         # Extract movie name, year, and language
-        match = re.search(r'^(.*?)(\(?\d{4}\)?)(.*?Tamil|Malayalam|Hindi|Telugu|English)?$', cleaned_name, flags=re.IGNORECASE)
+        match = re.search(r'^(.*?)[\s_]*\(?(\d{4})\)?[\s_]*(Malayalam|Tamil|Hindi|Telugu|English)?', filename, re.IGNORECASE)
 
         if match:
-            # Concatenate parts with proper spacing
-            parts = [part.strip() for part in match.groups() if part]
-            cleaned_name = ' '.join(parts)
-            
-        # Remove multiple spaces if any
-        return re.sub(r'\s+', ' ', cleaned_name).strip()
+            name = match.group(1).strip()
+            year = match.group(2).strip() if match.group(2) else ""
+            language = match.group(3).strip() if match.group(3) else ""
+
+            # Format the cleaned name
+            cleaned_name = f"{name} ({year}) {language}".strip()
+            return re.sub(r'\s+', ' ', cleaned_name)  # Remove extra spaces
+
+        # If no match is found, return the cleaned filename
+        return re.sub(r'\s+', ' ', filename).strip()
 
     async def process_movie_file(file_info, session, caption):
         """Handle the movie file upload."""
