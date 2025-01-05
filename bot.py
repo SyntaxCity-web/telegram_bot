@@ -99,7 +99,7 @@ async def add_movie(update: Update, context: CallbackContext):
     """Process movie uploads, cleaning filenames and managing sessions."""
     
     def clean_filename(filename):
-       """Clean the uploaded filename by removing unnecessary tags and extracting relevant details."""
+        """Clean the uploaded filename by removing unnecessary tags and extracting relevant details."""
         # Remove emojis and special characters
         filename = re.sub(r'[^\x00-\x7F]+', '', filename)
 
