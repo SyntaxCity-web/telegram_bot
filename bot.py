@@ -101,7 +101,7 @@ async def add_movie(update: Update, context: CallbackContext):
     def clean_filename(filename):
         """Clean the uploaded filename by removing unnecessary tags and extracting relevant details."""
         # Remove prefixes like @TamilMob_LinkZz
-         filename = re.sub(r'^@[\w_]+[\s-]*', '', filename)
+        filename = re.sub(r'^@[\w_]+[\s-]*', '', filename)
 
         # Remove emojis and special characters
         filename = re.sub(r'[^\x00-\x7F]+', '', filename)
