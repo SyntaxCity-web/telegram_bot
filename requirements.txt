@@ -4,3 +4,4 @@ nest-asyncio
 python-dotenv
 aiohttp
 pytz
+aiocron
