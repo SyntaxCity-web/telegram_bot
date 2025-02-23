@@ -366,7 +366,7 @@ async def start(update: Update, context: CallbackContext):
 
             return
     # Default behavior when no movie_id is provided
-    keyboard = [[InlineKeyboardButton("Add me to your chat! 🤖", url="https://t.me/+ERz0bGWEHHBmNTU9")]]
+    keyboard = [[InlineKeyboardButton("Add me to your chat! 🤖", url="https://t.me/+8h2UInNOV-o5YzI1")]]
     reply_markup = InlineKeyboardMarkup(keyboard)
     
     await update.message.reply_text(
@@ -409,7 +409,7 @@ async def keep_awake():
         await asyncio.sleep(300)  # Ping every 5 minutes
         async with aiohttp.ClientSession() as session:
             try:
-                async with session.get("https://redundant-larissa-maxzues003-512e605f.koyeb.app/") as resp:
+                async with session.get("https://faint-krissie-maxzues003-0c39e21f.koyeb.app/") as resp:
                     if resp.status != 200:
                         logging.warning(f"Ping failed with status: {resp.status}")
             except Exception as e:
