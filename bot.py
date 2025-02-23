@@ -442,36 +442,70 @@ async def start_web_server():
     logging.info(f"Web server running on port {PORT}")
 
 
-# Enhanced keep_awake function with better error handling
 async def keep_awake():
-    """Keep the bot awake with improved error handling and logging."""
-    retries = 3
-    base_delay = 5
+    """Keep the bot awake with comprehensive error handling, monitoring, and efficient retry logic."""
+    BASE_URL = "https://faint-krissie-maxzues003-0c39e21f.koyeb.app/"
+    PING_INTERVAL = 300  # 5 minutes
+    MAX_RETRIES = 3
+    BASE_DELAY = 5
     
+    # Tracking consecutive failures for monitoring
+    consecutive_failures = 0
+    total_pings = 0
+    
+    async def perform_health_check():
+        timeout = aiohttp.ClientTimeout(total=10)  # 10 second timeout
+        try:
+            async with aiohttp.ClientSession(timeout=timeout) as session:
+                async with session.get(BASE_URL) as response:
+                    if response.status == 200:
+                        return True
+                    logging.warning(f"Health check failed with status: {response.status}")
+                    return False
+        except asyncio.TimeoutError:
+            logging.error("Health check timed out")
+            return False
+        except aiohttp.ClientError as e:
+            logging.error(f"Connection error during health check: {e}")
+            return False
+        except Exception as e:
+            logging.error(f"Unexpected error during health check: {e}")
+            return False
+
     while True:
-        current_delay = base_delay
         success = False
-        
-        for _ in range(retries):
-            try:
-                async with aiohttp.ClientSession() as session:
-                    async with session.get("https://faint-krissie-maxzues003-0c39e21f.koyeb.app/", timeout=10) as resp:
-                        if resp.status == 200:
-                            logging.info("Keep-awake ping successful")
-                            success = True
-                            break
-                        else:
-                            logging.warning(f"Keep-awake ping failed with status: {resp.status}")
-            except Exception as e:
-                logging.error(f"Keep-awake ping failed: {e}")
+        retry_count = 0
+        delay = BASE_DELAY
+
+        # Attempt health check with retries
+        while retry_count < MAX_RETRIES and not success:
+            success = await perform_health_check()
+            total_pings += 1
             
-            await asyncio.sleep(current_delay)
-            current_delay *= 2  # Exponential backoff
+            if success:
+                if consecutive_failures > 0:
+                    logging.info(f"Health check recovered after {consecutive_failures} failures")
+                consecutive_failures = 0
+                break
+            
+            consecutive_failures += 1
+            retry_count += 1
+            
+            if retry_count < MAX_RETRIES:
+                logging.warning(f"Retrying health check in {delay} seconds (attempt {retry_count + 1}/{MAX_RETRIES})")
+                await asyncio.sleep(delay)
+                delay *= 2  # Exponential backoff
         
+        # Log extended information if all retries failed
         if not success:
-            logging.error("Keep-awake ping failed after all retries")
+            logging.error(
+                f"Health check failed after {MAX_RETRIES} attempts. "
+                f"Total pings: {total_pings}, "
+                f"Consecutive failures: {consecutive_failures}"
+            )
         
-        await asyncio.sleep(300)  # 5 minutes between ping attempts
+        # Wait for the next ping interval
+        await asyncio.sleep(PING_INTERVAL)
 
 async def main():
     """Main function to start the bot."""
