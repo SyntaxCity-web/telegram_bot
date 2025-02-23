@@ -18,6 +18,43 @@ from aiohttp import web
 from telegram.ext import CallbackQueryHandler
 import aiohttp
 
+class TimezoneFormatter(logging.Formatter):
+    """Custom logging formatter to include timezone-aware timestamps in 12-hour format."""
+
+    def __init__(self, fmt=None, datefmt=None, tz="Asia/Kolkata"):
+        super().__init__(fmt, datefmt)
+        self.timezone = pytz.timezone(tz)  # Set the timezone to IST
+
+    def formatTime(self, record, datefmt=None):
+        dt = datetime.fromtimestamp(record.created, self.timezone)  # Convert timestamp to IST
+        return dt.strftime(datefmt) if datefmt else dt.isoformat()
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    handlers=[
+        logging.StreamHandler(),  # Console output
+        logging.FileHandler('bot.log', encoding='utf-8')  # Log to file
+    ]
+)
+
+logger = logging.getLogger()
+
+# Apply the timezone-aware formatter to all handlers
+timezone_formatter = TimezoneFormatter(
+    fmt='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    datefmt='%Y-%m-%d %I:%M:%S %p %Z',  # 12-hour format with AM/PM
+    tz="Asia/Kolkata"  # Set timezone to IST
+)
+
+for handler in logger.handlers:
+    handler.setFormatter(timezone_formatter)
+
+# Test log messages
+logger.info("Bot is starting...")
+logger.warning("This is a test warning!")
+logger.error("Something went wrong!")
+
 
 # Apply nest_asyncio for environments like Jupyter
 nest_asyncio.apply()
