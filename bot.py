@@ -16,6 +16,7 @@ import random
 from aiohttp import web
 from telegram.ext import CallbackQueryHandler
 
+
 # Apply nest_asyncio for environments like Jupyter
 nest_asyncio.apply()
 
@@ -29,6 +30,25 @@ SEARCH_GROUP_ID = int(os.getenv('SEARCH_GROUP_ID'))
 STORAGE_GROUP_ID = int(os.getenv('STORAGE_GROUP_ID'))
 ADMIN_ID = int(os.getenv('ADMIN_ID'))
 PORT = int(os.getenv('PORT', 8088))  # Default to 8088 if not set
+
+# Logging Configuration
+logging.basicConfig(
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    level=logging.INFO,
+    datefmt='%Y-%m-%d %H:%M:%S %Z',  # Include timezone in the date format
+    handlers=[
+        logging.StreamHandler(),  # Console output
+        logging.FileHandler('bot.log', encoding='utf-8')  # Log to file
+    ]
+)
+
+# Get the root logger and apply the custom formatter
+logger = logging.getLogger()
+for handler in logger.handlers:
+    handler.setFormatter(TimezoneFormatter(
+        fmt='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+        datefmt='%Y-%m-%d %H:%M:%S %Z'
+    ))
 
 # MongoDB Client Setup
 def connect_mongo():
