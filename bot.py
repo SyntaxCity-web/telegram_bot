@@ -442,19 +442,36 @@ async def start_web_server():
     logging.info(f"Web server running on port {PORT}")
 
 
+# Enhanced keep_awake function with better error handling
 async def keep_awake():
-    """Ping the bot's hosting URL every 5 minutes to prevent sleeping."""
+    """Keep the bot awake with improved error handling and logging."""
+    retries = 3
+    base_delay = 5
+    
     while True:
-        async with aiohttp.ClientSession() as session:
+        current_delay = base_delay
+        success = False
+        
+        for _ in range(retries):
             try:
-                async with session.get("https://faint-krissie-maxzues003-0c39e21f.koyeb.app/") as resp:
-                    if resp.status == 200:
-                        print("Ping successful: Bot is awake")
-                    else:
-                        print(f"Ping failed with status: {resp.status}")
+                async with aiohttp.ClientSession() as session:
+                    async with session.get("https://faint-krissie-maxzues003-0c39e21f.koyeb.app/", timeout=10) as resp:
+                        if resp.status == 200:
+                            logging.info("Keep-awake ping successful")
+                            success = True
+                            break
+                        else:
+                            logging.warning(f"Keep-awake ping failed with status: {resp.status}")
             except Exception as e:
-                print(f"Failed to ping self: {e}")
-        await asyncio.sleep(300)  # 5 minutes
+                logging.error(f"Keep-awake ping failed: {e}")
+            
+            await asyncio.sleep(current_delay)
+            current_delay *= 2  # Exponential backoff
+        
+        if not success:
+            logging.error("Keep-awake ping failed after all retries")
+        
+        await asyncio.sleep(300)  # 5 minutes between ping attempts
 
 async def main():
     """Main function to start the bot."""
