@@ -1,0 +1,12 @@
+name: Keep Bot Awake
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"  # Runs every 10 minutes
+
+jobs:
+  keep-awake:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send Keep-Alive Ping
+        run: curl -s -o /dev/null -w "%{http_code}" https://faint-krissie-maxzues003-0c39e21f.koyeb.app/
