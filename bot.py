@@ -107,13 +107,13 @@ async def add_movie(update: Update, context: CallbackContext):
         filename = re.sub(r'\[.*?\]', '', filename)
 
         # Remove prefixes like @TamilMob_LinkZz
-        filename = re.sub(r'^@[\w_]+[\s-]*', '', filename)
+        filename = re.sub(r'^[@\[\(]*[\w\s-]+[\]\)]*[\s-]*', '', filename)
 
         # Remove emojis and special characters
         filename = re.sub(r'[^\x00-\x7F]+', '', filename)
 
         # Replace underscores with spaces
-        filename = filename.replace('_', ' ')
+        filename = re.sub(r'[_\s]+', ' ', filename).strip()
 
         # Remove unwanted tags
         pattern = r'(?i)(HDRip|10bit|x264|AAC|\d{3,4}MB|AMZN|WEB-DL|WEBRip|HEVC|250M|x265|ESub|HQ|\.mkv|\.mp4|\.avi|\.mov|BluRay|DVDRip|720p|1080p|540p|SD|HD|CAM|DVDScr|R5|TS|Rip|BRRip|AC3|DualAudio|6CH|v\d+)'
