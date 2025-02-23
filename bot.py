@@ -101,38 +101,39 @@ async def add_movie(update: Update, context: CallbackContext):
     """Process movie uploads, cleaning filenames and managing sessions."""
     
     def clean_filename(filename):
-    """Clean the uploaded filename by removing unnecessary tags and extracting relevant details."""
-    
-    # Remove text inside square brackets (like [CK], [1080p])
-    filename = re.sub(r'\[.*?\]', '', filename)
+        """Clean the uploaded filename by removing unnecessary tags and extracting relevant details."""
 
-    # Remove prefixes like @TamilMob_LinkZz or other unnecessary tags at the start
-    filename = re.sub(r'^[@\[\(]*[\w\s-]+[\]\)]*[\s-]*', '', filename)
+        # Remove text inside square brackets (like [CK], [1080p])
+        filename = re.sub(r'\[.*?\]', '', filename)
 
-    # Remove emojis and special characters
-    filename = re.sub(r'[^\x00-\x7F]+', '', filename)
+        # Remove prefixes like @TamilMob_LinkZz
+        filename = re.sub(r'^@[\w_]+[\s-]*', '', filename)
 
-    # Replace underscores and excess spaces with a single space
-    filename = re.sub(r'[_\s]+', ' ', filename).strip()
+        # Remove emojis and special characters
+        filename = re.sub(r'[^\x00-\x7F]+', '', filename)
 
-    # Remove unwanted tags like HDRip, x264, 1080p, etc.
-    pattern = r'(?i)(HDRip|10bit|x264|AAC|\d{3,4}MB|AMZN|WEB-DL|WEBRip|HEVC|250M|x265|ESub|HQ|\.mkv|\.mp4|\.avi|\.mov|BluRay|DVDRip|720p|1080p|540p|SD|HD|CAM|DVDScr|R5|TS|Rip|BRRip|AC3|DualAudio|6CH|v\d+)'
-    filename = re.sub(pattern, '', filename).strip()
+        # Replace underscores with spaces
+        filename = filename.replace('_', ' ')
 
-    # Extract movie name, year, and language
-    match = re.search(r'^(.*?)[\s_]*\(?(\d{4})\)?[\s_]*(Malayalam|Tamil|Hindi|Telugu|English)?', filename, re.IGNORECASE)
+        # Remove unwanted tags
+        pattern = r'(?i)(HDRip|10bit|x264|AAC|\d{3,4}MB|AMZN|WEB-DL|WEBRip|HEVC|250M|x265|ESub|HQ|\.mkv|\.mp4|\.avi|\.mov|BluRay|DVDRip|720p|1080p|540p|SD|HD|CAM|DVDScr|R5|TS|Rip|BRRip|AC3|DualAudio|6CH|v\d+)'
+        filename = re.sub(pattern, '', filename).strip()
 
-    if match:
-        name = match.group(1).strip()
-        year = match.group(2).strip() if match.group(2) else ""
-        language = match.group(3).strip() if match.group(3) else ""
+        # Extract movie name, year, and language
+        match = re.search(r'^(.*?)[\s_]*\(?(\d{4})\)?[\s_]*(Malayalam|Tamil|Hindi|Telugu|English)?', filename, re.IGNORECASE)
 
-        # Format the cleaned name
-        cleaned_name = f"{name} ({year}) {language}".strip()
-        return re.sub(r'\s+', ' ', cleaned_name)  # Remove extra spaces
+        if match:
+            name = match.group(1).strip()
+            year = match.group(2).strip() if match.group(2) else ""
+            language = match.group(3).strip() if match.group(3) else ""
 
-    return re.sub(r'\s+', ' ', filename).strip()
-    
+            # Format the cleaned name
+            cleaned_name = f"{name} ({year}) {language}".strip()
+            return re.sub(r'\s+', ' ', cleaned_name)  # Remove extra spaces
+
+        # If no match is found, return the cleaned filename
+        return re.sub(r'\s+', ' ', filename).strip()
+
     async def process_movie_file(file_info, session, caption):
         """Handle the movie file upload."""
         filename = file_info.file_name
