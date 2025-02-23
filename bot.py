@@ -405,15 +405,19 @@ async def start_web_server():
 
 
 async def keep_awake():
-    while True:
-        await asyncio.sleep(300)  # Ping every 5 minutes
-        async with aiohttp.ClientSession() as session:
-            try:
-                async with session.get("https://faint-krissie-maxzues003-0c39e21f.koyeb.app/") as resp:
-                    if resp.status != 200:
-                        logging.warning(f"Ping failed with status: {resp.status}")
-            except Exception as e:
-                logging.error(f"Failed to ping self: {e}")
+    """Ping the bot's hosting URL every hour to prevent sleeping."""
+    async with aiohttp.ClientSession() as session:
+        try:
+            async with session.get("https://faint-krissie-maxzues003-0c39e21f.koyeb.app/") as resp:
+                if resp.status != 200:
+                    logging.warning(f"Ping failed with status: {resp.status}")
+                else:
+                    logging.info("Ping successful: Bot is awake")
+        except Exception as e:
+            logging.error(f"Failed to ping self: {e}")
+
+# Schedule keep_awake() to run every hour
+aiocron.crontab("0 * * * *", func=keep_awake)
 
 
 
