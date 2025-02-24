@@ -107,7 +107,7 @@ async def add_movie(update: Update, context: CallbackContext):
         filename = re.sub(r'\[.*?\]', '', filename)
 
         # Remove prefixes like @TamilMob_LinkZz
-        filename = re.sub(r'^[@\[\(]*[\w\s-]+[\]\)]*[\s-]*', '', filename)
+        filename = re.sub(r'^@[\w_]+[\s-]*', '', filename)
 
         # Remove emojis and special characters
         filename = re.sub(r'[^\x00-\x7F]+', '', filename)
