@@ -106,8 +106,8 @@ async def add_movie(update: Update, context: CallbackContext):
         # Remove text inside square brackets (like [CK], [1080p])
         filename = re.sub(r'\[.*?\]', '', filename)
 
-        # Remove prefixes like @TamilMob_LinkZz
-        filename = re.sub(r'^@[\w_]+[\s-]*', '', filename)
+        # Remove prefixes like @TamilMob_LinkZz and leading special characters
+        filename = re.sub(r'^[@\W_]+', '', filename)  # Removes @, -, _, spaces at the start
 
         # Remove emojis and special characters
         filename = re.sub(r'[^\x00-\x7F]+', '', filename)
@@ -116,14 +116,14 @@ async def add_movie(update: Update, context: CallbackContext):
         filename = re.sub(r'[_\s]+', ' ', filename).strip()
 
         # Remove unwanted tags
-        pattern = r'(?i)(HDRip|10bit|x264|AAC|\d{3,4}MB|AMZN|WEB-DL|WEBRip|HEVC|250M|x265|ESub|HQ|\.mkv|\.mp4|\.avi|\.mov|BluRay|DVDRip|720p|1080p|540p|SD|HD|CAM|DVDScr|R5|TS|Rip|BRRip|AC3|DualAudio|6CH|v\d+)'
-        filename = re.sub(pattern, '', filename).strip()
+        pattern = r'(?i)(HDRip|10bit|x264|AAC\d*|MB|AMZN|WEB-DL|WEBRip|HEVC|x265|ESub|HQ|\.mkv|\.mp4|\.avi|\.mov|BluRay|DVDRip|720p|1080p|540p|SD|HD|CAM|DVDScr|R5|TS|Rip|BRRip|AC3|DualAudio|6CH|v\d+)(\W|$)'
+        filename = re.sub(pattern, ' ', filename).strip()
 
         # Extract movie name, year, and language
         match = re.search(r'^(.*?)[\s_]*\(?(\d{4})\)?[\s_]*(Malayalam|Tamil|Hindi|Telugu|English)?', filename, re.IGNORECASE)
 
         if match:
-            name = match.group(1).strip()
+            name = match.group(1).strip(" -._")  # Remove extra special characters
             year = match.group(2).strip() if match.group(2) else ""
             language = match.group(3).strip() if match.group(3) else ""
 
@@ -132,7 +132,7 @@ async def add_movie(update: Update, context: CallbackContext):
             return re.sub(r'\s+', ' ', cleaned_name)  # Remove extra spaces
 
         # If no match is found, return the cleaned filename
-        return re.sub(r'\s+', ' ', filename).strip()
+        return filename.strip(" -._")
 
     async def process_movie_file(file_info, session, caption):
         """Handle the movie file upload."""
