@@ -98,65 +98,92 @@ def sanitize_unicode(text):
 upload_sessions = defaultdict(lambda: {'files': [], 'image': None, 'caption': None})
 
 async def add_movie(update: Update, context: CallbackContext):
-    """Process movie uploads, cleaning filenames and managing sessions."""
-    
+    """Handle movie uploads, ensuring filename prompts and final save only after image upload."""
+
+    user_id = update.effective_user.id
+    session = upload_sessions.setdefault(user_id, {"files": [], "pending_files": [], "image": None})
+
+    file_info = update.message.document
+    image_info = update.message.photo
+
     def clean_filename(filename):
-        """Clean the uploaded filename by removing unnecessary tags and extracting relevant details."""
+        """Clean and extract movie name from filename."""
+        if not filename:
+            return None
 
-        # Remove text inside square brackets (like [CK], [1080p])
-        filename = re.sub(r'\[.*?\]', '', filename)
+        filename = re.sub(r'\[.*?\]', '', filename)  # Remove text inside brackets
+        filename = re.sub(r'^[^\w]+', '', filename)  # Remove special characters at the start
+        filename = re.sub(r'[^\x00-\x7F]+', '', filename)  # Remove non-ASCII characters
+        filename = re.sub(r'[_\s]+', ' ', filename).strip()  # Replace underscores with spaces
 
-        # Remove prefixes like @TamilMob_LinkZz and leading special characters
-        filename = re.sub(r'^[@\W_]+', '', filename)  # Removes @, -, _, spaces at the start
-
-        # Remove emojis and special characters
-        filename = re.sub(r'[^\x00-\x7F]+', '', filename)
-
-        # Replace underscores with spaces
-        filename = re.sub(r'[_\s]+', ' ', filename).strip()
-
-        # Remove unwanted tags
-        pattern = r'(?i)(HDRip|10bit|x264|AAC\d*|MB|AMZN|WEB-DL|WEBRip|HEVC|x265|ESub|HQ|\.mkv|\.mp4|\.avi|\.mov|BluRay|DVDRip|720p|1080p|540p|SD|HD|CAM|DVDScr|R5|TS|Rip|BRRip|AC3|DualAudio|6CH|v\d+)(\W|$)'
-        filename = re.sub(pattern, ' ', filename).strip()
-
-        # Extract movie name, year, and language
         match = re.search(r'^(.*?)[\s_]*\(?(\d{4})\)?[\s_]*(Malayalam|Tamil|Hindi|Telugu|English)?', filename, re.IGNORECASE)
-
         if match:
-            name = match.group(1).strip(" -._")  # Remove extra special characters
+            name = match.group(1).strip(" -._")
             year = match.group(2).strip() if match.group(2) else ""
             language = match.group(3).strip() if match.group(3) else ""
+            return f"{name} ({year}) {language}".strip()
 
-            # Format the cleaned name
-            cleaned_name = f"{name} ({year}) {language}".strip()
-            return re.sub(r'\s+', ' ', cleaned_name)  # Remove extra spaces
-
-        # If no match is found, return the cleaned filename
         return filename.strip(" -._")
 
-    async def process_movie_file(file_info, session, caption):
-        """Handle the movie file upload."""
-        filename = file_info.file_name
+    async def process_movie_file(file_info, session):
+        """Handle movie file upload."""
+        filename = file_info.file_name if file_info.file_name else None
         cleaned_name = clean_filename(filename)
-        session['files'].append({
-            'file_id': file_info.file_id,
-            'file_name': cleaned_name
-        })
-        session['caption'] = caption or session.get('caption', cleaned_name)
-        await update.message.reply_text(
-            sanitize_unicode(f"✅ {len(session['files'])} file(s) received! Now, please upload an image for the related file(s).")
-        )
 
-    async def process_image_upload(image_info, session, caption):
-        """Handle the movie poster upload."""
+        if cleaned_name:
+            session['files'].append({'file_id': file_info.file_id, 'file_name': cleaned_name})
+            await update.message.reply_text(sanitize_unicode(f"✅ File added: {cleaned_name}."))
+        else:
+            session['pending_files'].append({'file_id': file_info.file_id})
+            file_num = len(session['pending_files'])
+            await update.message.reply_text(sanitize_unicode(f"❌ No filename {file_num} detected. Please reply with the movie name."))
+
+    async def process_image_upload(image_info, session):
+        """Handle image upload and finalize movie details."""
         largest_photo = max(image_info, key=lambda photo: photo.width * photo.height)
-        session['image'] = {
-            'file_id': largest_photo.file_id,
-            'width': largest_photo.width,
-            'height': largest_photo.height
-        }
-        session['caption'] = caption or session.get('caption')
-        await update.message.reply_text(sanitize_unicode("✅ Image received! Now, please upload the movie file(s)."))
+        session['image'] = {'file_id': largest_photo.file_id, 'width': largest_photo.width, 'height': largest_photo.height}
+
+        if session['files']:
+            movie_name = session['files'][0]['file_name']
+            movie_id = str(uuid.uuid4())
+
+            movie_entry = {
+                'movie_id': movie_id,
+                'name': movie_name,
+                'media': {'documents': session['files'], 'image': session['image']}
+            }
+
+            try:
+                collection.insert_one(movie_entry)
+                await update.message.reply_text(sanitize_unicode(f"✅ Successfully added movie: {movie_name}"))
+
+                if SEARCH_GROUP_ID:
+                    await send_preview_to_group(movie_entry)
+
+                del upload_sessions[user_id]  # Clear session after saving
+            except Exception as e:
+                logging.error(f"Database error: {str(e)}")
+                await update.message.reply_text(sanitize_unicode("❌ Failed to add the movie. Please try again later."))
+        else:
+            await update.message.reply_text(sanitize_unicode("❌ You need to upload at least one movie file before adding an image."))
+
+    # Handling name responses for files without a filename
+    if session['pending_files'] and update.message.text:
+        movie_name = sanitize_unicode(update.message.text.strip())
+        pending_file = session['pending_files'].pop(0)
+        session['files'].append({'file_id': pending_file['file_id'], 'file_name': movie_name})
+
+        file_num = len(session['files'])
+        await update.message.reply_text(sanitize_unicode(f"✅ Name {file_num} saved: {movie_name}."))
+
+        return  # Exit early to avoid processing more files/images
+
+    if file_info:
+        await process_movie_file(file_info, session)
+    elif image_info:
+        await process_image_upload(image_info, session)
+    else:
+        await update.message.reply_text(sanitize_unicode("❌ Please upload a movie file or an image."))
 
     def create_deep_link(movie_id):
         """Generate a deep link to the movie."""
@@ -423,7 +450,6 @@ async def id_command(update: Update, context: CallbackContext):
         f"👤 Your ID: {user_id}\n"
         f"💬 Group ID: {chat_id}"
     )
-
     # Send the response back to the user
     await update.message.reply_text(response)
 
@@ -440,7 +466,6 @@ async def start_web_server():
     site = web.TCPSite(runner, '0.0.0.0', PORT)
     await site.start()
     logging.info(f"Web server running on port {PORT}")
-
 
 async def keep_awake():
     """Ping the bot's hosting URL every 5 minutes to prevent sleeping."""
@@ -466,7 +491,7 @@ async def keep_awake():
             retry_delay = min(retry_delay * 2, 300)  # Max backoff time = 5 minutes
 
     logging.critical("🚨 Max retries reached. Bot might be inactive!")
-
+    
 # Schedule keep_awake() to run every 5 minutes
 aiocron.crontab("*/5 * * * *", func=keep_awake)
 
@@ -474,7 +499,6 @@ async def main():
     """Main function to start the bot."""
     try:
         await start_web_server()
-
         application = ApplicationBuilder().token(TOKEN).build()
         application.add_handler(CommandHandler("start", start))
         application.add_handler(MessageHandler(filters.Document.ALL, add_movie))
