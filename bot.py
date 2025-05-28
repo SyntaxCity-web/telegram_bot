@@ -444,7 +444,7 @@ async def start_web_server():
 
 async def keep_awake():
     """Ping the bot's hosting URL every 5 minutes to prevent sleeping."""
-    url = "https://faint-krissie-maxzues003-0c39e21f.koyeb.app/"
+    url = "https://select-kitti-maxzues003-d3896a3f.koyeb.app/"
     max_retries = 5  # Maximum retries before giving up
     retry_delay = 10  # Start with a 10-second delay
 
